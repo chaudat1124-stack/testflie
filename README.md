@@ -2,7 +2,6 @@
 Ứng dụng quản lý công việc theo mô hình Kanban.
 
 ## Chức năng chính:
-- Đăng nhập / Đăng ký / Quên mật khẩu (Giao diện Premium)
 - Tạo/Xóa Board (Bảng dự án)
 - Quản lý Cột (To-do, Doing, Done, v.v.)
 - Kéo & Thả Task (Drag & Drop)
