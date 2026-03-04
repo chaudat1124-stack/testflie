@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'injection_container.dart' as di;
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // TODO: Khởi tạo Dependency Injection (GetIt) ở đây sau
+  await di.init();
   runApp(const KanbanFlowApp());
 }
 
@@ -18,9 +19,7 @@ class KanbanFlowApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const Scaffold(
-        body: Center(
-          child: Text('KanbanFlow - Clean Architecture Base'),
-        ),
+        body: Center(child: Text('KanbanFlow - Clean Architecture Base')),
       ),
     );
   }

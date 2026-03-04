@@ -1,30 +1,85 @@
-part of 'task_bloc.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:equatable/equatable.dart';
+import '../../domain/entities/task.dart';
+import '../../domain/usecases/task_usecases.dart';
 
-abstract class TaskState extends Equatable {
-  const TaskState();
-  
-  @override
-  List<Object> get props => [];
-}
+part 'task_event.dart';
+part 'task_state.dart';
 
-class TaskInitial extends TaskState {}
+class TaskBloc extends Bloc<TaskEvent, TaskState> {
+  final GetTasksUseCase getTasks;
+  final AddTaskUseCase addTask;
+  final UpdateTaskUseCase updateTask;
+  final DeleteTaskUseCase deleteTask;
+  final SearchTasksUseCase searchTasks;
 
-class TaskLoading extends TaskState {}
+  TaskBloc({
+    required this.getTasks,
+    required this.addTask,
+    required this.updateTask,
+    required this.deleteTask,
+    required this.searchTasks,
+  }) : super(TaskInitial()) {
+    on<LoadTasks>(_onLoadTasks);
+    on<AddNewTask>(_onAddTask);
+    on<UpdateExistingTask>(_onUpdateTask);
+    on<DeleteExistingTask>(_onDeleteTask);
+    on<SearchTasksEvent>(_onSearchTasks);
+  }
 
-class TaskLoaded extends TaskState {
-  final List<Task> tasks;
+  Future<void> _onLoadTasks(LoadTasks event, Emitter<TaskState> emit) async {
+    emit(TaskLoading());
+    try {
+      final tasks = await getTasks();
+      emit(TaskLoaded(tasks));
+    } catch (e) {
+      emit(const TaskError('Failed to load tasks'));
+    }
+  }
 
-  const TaskLoaded(this.tasks);
+  Future<void> _onAddTask(AddNewTask event, Emitter<TaskState> emit) async {
+    try {
+      await addTask(event.task);
+      add(LoadTasks());
+    } catch (e) {
+      emit(const TaskError('Failed to add task'));
+    }
+  }
 
-  @override
-  List<Object> get props => [tasks];
-}
+  Future<void> _onUpdateTask(
+    UpdateExistingTask event,
+    Emitter<TaskState> emit,
+  ) async {
+    try {
+      await updateTask(event.task);
+      add(LoadTasks());
+    } catch (e) {
+      emit(const TaskError('Failed to update task'));
+    }
+  }
 
-class TaskError extends TaskState {
-  final String message;
+  Future<void> _onDeleteTask(
+    DeleteExistingTask event,
+    Emitter<TaskState> emit,
+  ) async {
+    try {
+      await deleteTask(event.id);
+      add(LoadTasks());
+    } catch (e) {
+      emit(const TaskError('Failed to delete task'));
+    }
+  }
 
-  const TaskError(this.message);
-
-  @override
-  List<Object> get props => [message];
+  Future<void> _onSearchTasks(
+    SearchTasksEvent event,
+    Emitter<TaskState> emit,
+  ) async {
+    emit(TaskLoading());
+    try {
+      final tasks = await searchTasks(event.keyword);
+      emit(TaskLoaded(tasks));
+    } catch (e) {
+      emit(const TaskError('Failed to search tasks'));
+    }
+  }
 }
