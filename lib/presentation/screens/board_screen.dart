@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter/widget_previews.dart';
+import 'package:uuid/uuid.dart';
 import '../blocs/task_bloc.dart';
 import '../blocs/task_event.dart';
 import '../blocs/task_state.dart';
@@ -9,6 +9,13 @@ import '../blocs/board_event.dart';
 import '../blocs/board_state.dart';
 import '../../domain/entities/task.dart';
 import '../../domain/entities/board.dart';
+import '../blocs/auth/auth_bloc.dart';
+import '../blocs/auth/auth_state.dart';
+import '../widgets/empty_dashboard_view.dart';
+import '../widgets/animated_menu_hint.dart';
+import '../widgets/board_drawer.dart';
+import '../widgets/task_card.dart';
+import '../widgets/board_member_dialog.dart';
 
 class BoardScreen extends StatefulWidget {
   const BoardScreen({super.key});
@@ -86,6 +93,8 @@ class _BoardScreenState extends State<BoardScreen> {
       ],
       child: Scaffold(
         appBar: AppBar(
+          leadingWidth: selectedBoardId == null ? 140 : 56,
+          leading: AnimatedMenuHint(showHint: selectedBoardId == null),
           title: isSearching
               ? TextField(
                   controller: searchController,
@@ -106,6 +115,31 @@ class _BoardScreenState extends State<BoardScreen> {
                 ),
           centerTitle: !isSearching,
           actions: [
+            if (selectedBoardId != null)
+              BlocBuilder<BoardBloc, BoardState>(
+                builder: (context, state) {
+                  if (state is BoardLoaded) {
+                    final currentBoard = state.boards.firstWhere(
+                      (b) => b.id == selectedBoardId,
+                      orElse: () => state.boards.first,
+                    );
+                    return IconButton(
+                      icon: const Icon(Icons.group_add_outlined),
+                      tooltip: 'Thành viên',
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => BoardMemberDialog(
+                            boardId: currentBoard.id,
+                            ownerId: currentBoard.ownerId,
+                          ),
+                        );
+                      },
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
             IconButton(
               icon: Icon(isSearching ? Icons.close : Icons.search),
               onPressed: () {
@@ -135,7 +169,12 @@ class _BoardScreenState extends State<BoardScreen> {
             const SizedBox(width: 8),
           ],
         ),
-        drawer: _buildDrawer(context),
+        drawer: BoardDrawer(
+          selectedBoardId: selectedBoardId,
+          onSelectBoard: _selectBoard,
+          onAddBoard: _showAddBoardDialog,
+          onDeleteBoard: _showDeleteBoardDialog,
+        ),
         body: selectedBoardId == null
             ? EmptyDashboardView(
                 onAddBoard: () => _showAddBoardDialog(context),
@@ -157,133 +196,6 @@ class _BoardScreenState extends State<BoardScreen> {
                 backgroundColor: Colors.blueAccent,
                 elevation: 4,
               ),
-      ),
-    );
-  }
-
-  Widget _buildDrawer(BuildContext context) {
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.only(
-              top: 60,
-              bottom: 30,
-              left: 24,
-              right: 24,
-            ),
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Colors.blueAccent, Colors.lightBlue],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.view_kanban, color: Colors.white, size: 36),
-                SizedBox(width: 16),
-                Text(
-                  'Các Bảng',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: BlocBuilder<BoardBloc, BoardState>(
-              builder: (context, state) {
-                if (state is BoardLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                } else if (state is BoardLoaded) {
-                  final boards = state.boards;
-                  if (boards.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'Chưa có Bảng nào.',
-                        style: TextStyle(color: Colors.black54),
-                      ),
-                    );
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: boards.length,
-                    separatorBuilder: (_, __) =>
-                        const Divider(height: 1, indent: 24, endIndent: 24),
-                    itemBuilder: (context, index) {
-                      final board = boards[index];
-                      final isSelected = board.id == selectedBoardId;
-                      return ListTile(
-                        leading: Icon(
-                          isSelected
-                              ? Icons.dashboard
-                              : Icons.dashboard_outlined,
-                          color: isSelected
-                              ? Colors.blueAccent
-                              : Colors.black54,
-                        ),
-                        title: Text(
-                          board.title,
-                          style: TextStyle(
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: isSelected
-                                ? Colors.blueAccent
-                                : Colors.black87,
-                          ),
-                        ),
-                        selected: isSelected,
-                        selectedTileColor: Colors.blue.withOpacity(0.05),
-                        onTap: () {
-                          _selectBoard(board.id);
-                          Navigator.pop(context); // Close drawer
-                        },
-                        trailing: IconButton(
-                          icon: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.redAccent,
-                            size: 20,
-                          ),
-                          onPressed: () =>
-                              _showDeleteBoardDialog(context, board),
-                        ),
-                      );
-                    },
-                  );
-                } else if (state is BoardError) {
-                  return Center(child: Text('Lỗi: ${state.message}'));
-                }
-                return const SizedBox.shrink();
-              },
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                _showAddBoardDialog(context);
-              },
-              icon: const Icon(Icons.add),
-              label: const Text('Thêm Bảng Mới'),
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(50),
-                backgroundColor: Colors.blue.withOpacity(0.1),
-                foregroundColor: Colors.blueAccent,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -429,6 +341,9 @@ class _BoardScreenState extends State<BoardScreen> {
           title: droppedTask.title,
           description: droppedTask.description,
           status: status,
+          assigneeId: droppedTask.assigneeId,
+          creatorId: droppedTask.creatorId,
+          createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
       },
@@ -530,6 +445,9 @@ class _BoardScreenState extends State<BoardScreen> {
           title: droppedTask.title,
           description: droppedTask.description,
           status: status,
+          assigneeId: droppedTask.assigneeId,
+          creatorId: droppedTask.creatorId,
+          createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
       },
@@ -584,15 +502,18 @@ class _BoardScreenState extends State<BoardScreen> {
                           width: 380,
                           child: Opacity(
                             opacity: 0.9,
-                            child: _buildTaskCard(task, accentColor, context),
+                            child: TaskCard(
+                              task: task,
+                              accentColor: accentColor,
+                            ),
                           ),
                         ),
                       ),
                       childWhenDragging: Opacity(
                         opacity: 0.3,
-                        child: _buildTaskCard(task, accentColor, context),
+                        child: TaskCard(task: task, accentColor: accentColor),
                       ),
-                      child: _buildTaskCard(task, accentColor, context),
+                      child: TaskCard(task: task, accentColor: accentColor),
                     );
                   },
                 ),
@@ -620,6 +541,9 @@ class _BoardScreenState extends State<BoardScreen> {
           title: droppedTask.title,
           description: droppedTask.description,
           status: status,
+          assigneeId: droppedTask.assigneeId,
+          creatorId: droppedTask.creatorId,
+          createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
       },
@@ -730,15 +654,18 @@ class _BoardScreenState extends State<BoardScreen> {
                             width: MediaQuery.of(context).size.width - 64,
                             child: Opacity(
                               opacity: 0.9,
-                              child: _buildTaskCard(task, accentColor, context),
+                              child: TaskCard(
+                                task: task,
+                                accentColor: accentColor,
+                              ),
                             ),
                           ),
                         ),
                         childWhenDragging: Opacity(
                           opacity: 0.3,
-                          child: _buildTaskCard(task, accentColor, context),
+                          child: TaskCard(task: task, accentColor: accentColor),
                         ),
-                        child: _buildTaskCard(task, accentColor, context),
+                        child: TaskCard(task: task, accentColor: accentColor),
                       ),
                     );
                   }),
@@ -747,85 +674,6 @@ class _BoardScreenState extends State<BoardScreen> {
           ),
         );
       },
-    );
-  }
-
-  Widget _buildTaskCard(Task task, Color accentColor, BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.15)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {},
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: accentColor, width: 3)),
-              ),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          task.title,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                            color: Colors.black87,
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () => context.read<TaskBloc>().add(
-                          DeleteTaskEvent(task.id),
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4.0),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.black26,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (task.description.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      task.description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 13,
-                        height: 1.4,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -870,9 +718,14 @@ class _BoardScreenState extends State<BoardScreen> {
               ElevatedButton(
                 onPressed: () {
                   if (titleController.text.trim().isEmpty) return;
+                  final authState = context.read<AuthBloc>().state;
+                  final userId = authState is Authenticated
+                      ? authState.user.id
+                      : '';
                   final board = Board(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    id: const Uuid().v4(),
                     title: titleController.text.trim(),
+                    ownerId: userId,
                     createdAt: DateTime.now().toIso8601String(),
                   );
                   context.read<BoardBloc>().add(AddBoardEvent(board));
@@ -1003,12 +856,18 @@ class _BoardScreenState extends State<BoardScreen> {
                       selectedBoardId == null) {
                     return;
                   }
+                  final authState = context.read<AuthBloc>().state;
+                  final userId = authState is Authenticated
+                      ? authState.user.id
+                      : null;
                   final task = Task(
-                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    id: const Uuid().v4(),
                     boardId: selectedBoardId!,
                     title: titleController.text.trim(),
                     description: descController.text.trim(),
                     status: 'todo',
+                    creatorId: userId,
+                    createdAt: DateTime.now().toIso8601String(),
                   );
                   context.read<TaskBloc>().add(AddTaskEvent(task));
                   Navigator.pop(context);
@@ -1023,217 +882,6 @@ class _BoardScreenState extends State<BoardScreen> {
                 child: const Text('Thêm công việc'),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-@Preview(name: 'Full Dashboard')
-Widget previewEmptyDashboardView() {
-  return Scaffold(
-    body: EmptyDashboardView(onAddBoard: () {}, onOpenMenu: () {}),
-  );
-}
-
-class EmptyDashboardView extends StatelessWidget {
-  final VoidCallback onAddBoard;
-  final VoidCallback onOpenMenu;
-
-  const EmptyDashboardView({
-    super.key,
-    required this.onAddBoard,
-    required this.onOpenMenu,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Color(0xFFF8FAFC), Color(0xFFEFF6FF)],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: Center(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Biểu tượng tổng quan
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blueAccent.withOpacity(0.15),
-                      blurRadius: 40,
-                      offset: const Offset(0, 15),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.dashboard_customize_rounded,
-                  size: 70,
-                  color: Colors.blueAccent.shade400,
-                ),
-              ),
-              const SizedBox(height: 32),
-              // Tiêu đề
-              const Text(
-                'Tổng Quan KanbanFlow',
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF1E293B),
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Mô tả
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  'Không gian làm việc của bạn đang trống. Hãy bắt đầu kiến tạo quy trình làm việc thông minh ngay bây giờ.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Color(0xFF64748B),
-                    height: 1.5,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 48),
-              // Mạng lưới các nút tương tác (Action Cards)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Wrap(
-                  spacing: 20,
-                  runSpacing: 20,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    // Nút: Tạo Bảng Mới
-                    DashboardActionCard(
-                      title: 'Tạo Bảng Mới',
-                      subtitle: 'Bắt đầu dự án mới ngay',
-                      icon: Icons.add_chart_rounded,
-                      gradientColors: const [
-                        Colors.blueAccent,
-                        Colors.lightBlue,
-                      ],
-                      onTap: onAddBoard,
-                    ),
-                    // Nút: Mở Menu Bảng
-                    DashboardActionCard(
-                      title: 'Quản Lý Bảng',
-                      subtitle: 'Xem các bảng hiện tại',
-                      icon: Icons.menu_open_rounded,
-                      gradientColors: const [
-                        Colors.indigo,
-                        Colors.indigoAccent,
-                      ],
-                      onTap: onOpenMenu,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 60), // Khoảng trống dưới cùng
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class DashboardActionCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final List<Color> gradientColors;
-  final VoidCallback onTap;
-
-  const DashboardActionCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.gradientColors,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 260,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: gradientColors.first.withOpacity(0.15),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: onTap,
-          splashColor: gradientColors.first.withOpacity(0.1),
-          highlightColor: gradientColors.first.withOpacity(0.05),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: gradientColors,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon, color: Colors.white, size: 28),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

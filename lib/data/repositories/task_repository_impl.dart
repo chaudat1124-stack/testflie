@@ -1,14 +1,12 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/task.dart';
 import '../../domain/repositories/task_repository.dart';
-import '../datasources/local_database.dart';
 import '../models/task_model.dart';
 
-// Class này implements (thực thi) cái bản thiết kế TaskRepository bên tầng Domain
 class TaskRepositoryImpl implements TaskRepository {
-  final LocalDatabase localDatabase;
+  final SupabaseClient supabaseClient;
 
-  // Tiêm dependency (LocalDatabase) vào thông qua constructor
-  TaskRepositoryImpl({required this.localDatabase});
+  TaskRepositoryImpl({required this.supabaseClient});
 
   @override
   Future<List<Task>> getTasks({
@@ -16,24 +14,35 @@ class TaskRepositoryImpl implements TaskRepository {
     String? query,
     String? status,
   }) async {
-    return await localDatabase.getTasks(
-      boardId: boardId,
-      query: query,
-      status: status,
-    );
+    var request = supabaseClient.from('tasks').select();
+
+    if (boardId != null) {
+      request = request.eq('board_id', boardId);
+    }
+    if (status != null) {
+      request = request.eq('status', status);
+    }
+    if (query != null && query.isNotEmpty) {
+      request = request.ilike('title', '%$query%');
+    }
+
+    final response = await request.order('created_at', ascending: false);
+    return (response as List).map<Task>((e) => TaskModel.fromMap(e)).toList();
   }
 
   @override
   Future<void> addTask(Task task) async {
-    // Chuyển đổi từ Entity (Task - của tầng Domain) sang Model (TaskModel - của tầng Data) để lưu
     final taskModel = TaskModel(
       id: task.id,
       boardId: task.boardId,
       title: task.title,
       description: task.description,
       status: task.status,
+      assigneeId: task.assigneeId,
+      creatorId: task.creatorId,
+      createdAt: task.createdAt,
     );
-    await localDatabase.insertTask(taskModel);
+    await supabaseClient.from('tasks').insert(taskModel.toMap());
   }
 
   @override
@@ -44,12 +53,18 @@ class TaskRepositoryImpl implements TaskRepository {
       title: task.title,
       description: task.description,
       status: task.status,
+      assigneeId: task.assigneeId,
+      creatorId: task.creatorId,
+      createdAt: task.createdAt,
     );
-    await localDatabase.updateTask(taskModel);
+    await supabaseClient
+        .from('tasks')
+        .update(taskModel.toMap())
+        .eq('id', task.id);
   }
 
   @override
   Future<void> deleteTask(String id) async {
-    await localDatabase.deleteTask(id);
+    await supabaseClient.from('tasks').delete().eq('id', id);
   }
 }

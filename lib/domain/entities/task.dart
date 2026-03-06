@@ -4,6 +4,9 @@ class Task {
   final String title;
   final String description;
   final String status; // Trạng thái: 'todo', 'doing', 'done'
+  final String? assigneeId;
+  final String? creatorId;
+  final String createdAt;
 
   const Task({
     required this.id,
@@ -11,5 +14,8 @@ class Task {
     required this.title,
     required this.description,
     required this.status,
+    this.assigneeId,
+    this.creatorId,
+    required this.createdAt,
   });
 }
