@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../../app_preferences.dart';
-
+import '../../injection_container.dart';
 import '../../data/repositories/friend_repository.dart';
 import '../../domain/entities/friend_request.dart';
 import '../../domain/entities/friend_user.dart';
@@ -17,7 +17,7 @@ class FriendsScreen extends StatefulWidget {
 }
 
 class _FriendsScreenState extends State<FriendsScreen> {
-  final _repo = FriendRepository();
+  final _repo = sl<FriendRepository>();
   final _emailController = TextEditingController();
 
   bool _loading = true;

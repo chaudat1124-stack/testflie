@@ -2,12 +2,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/entities/friend_request.dart';
 import '../../domain/entities/friend_user.dart';
+import '../repositories/notification_repository.dart';
 
 class FriendRepository {
+  final NotificationRepository notificationRepository;
   final SupabaseClient _client;
 
-  FriendRepository({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  FriendRepository({
+    SupabaseClient? client,
+    required this.notificationRepository,
+  }) : _client = client ?? Supabase.instance.client;
 
   String _requireUserId() {
     final id = _client.auth.currentUser?.id;
@@ -72,7 +76,9 @@ class FriendRepository {
         .eq('status', 'pending')
         .maybeSingle();
     if (existingIncoming != null) {
-      throw Exception('Người này đã gửi lời mời cho bạn. Hãy chấp nhận lời mời.');
+      throw Exception(
+        'Người này đã gửi lời mời cho bạn. Hãy chấp nhận lời mời.',
+      );
     }
 
     await _client.from('friend_requests').insert({
@@ -80,6 +86,27 @@ class FriendRepository {
       'recipient_id': recipientId,
       'status': 'pending',
     });
+
+    // Notification logic
+    try {
+      final senderProfile = await _client
+          .from('profiles')
+          .select('display_name, email')
+          .eq('id', currentUserId)
+          .maybeSingle();
+
+      final senderName =
+          (senderProfile?['display_name'] as String?) ??
+          ((senderProfile?['email'] as String?)?.split('@').first ?? 'Ai đó');
+
+      await notificationRepository.createNotification(
+        userId: recipientId,
+        title: 'Lời mời kết bạn mới',
+        message: '$senderName đã gửi cho bạn một lời mời kết bạn.',
+      );
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<List<FriendUser>> getFriends() async {
@@ -100,14 +127,18 @@ class FriendRepository {
     try {
       final response = await _client
           .from('profiles')
-          .select('id, email, display_name, avatar_url, bio, is_online, last_seen_at')
+          .select(
+            'id, email, display_name, avatar_url, bio, is_online, last_seen_at',
+          )
           .filter('id', 'in', friendIds);
       profiles = response as List;
     } catch (e) {
       if (!_isMissingColumnError(e)) rethrow;
       final response = await _client
           .from('profiles')
-          .select('id, email, display_name, avatar_url, is_online, last_seen_at')
+          .select(
+            'id, email, display_name, avatar_url, is_online, last_seen_at',
+          )
           .filter('id', 'in', friendIds);
       profiles = response as List;
     }

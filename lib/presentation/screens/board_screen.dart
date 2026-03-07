@@ -21,6 +21,7 @@ import '../widgets/task_card.dart';
 import '../widgets/board_member_dialog.dart';
 import 'workspace_menu_screen.dart';
 import '../../app_preferences.dart';
+import '../../injection_container.dart';
 
 class BoardScreen extends StatefulWidget {
   const BoardScreen({super.key});
@@ -31,7 +32,7 @@ class BoardScreen extends StatefulWidget {
 
 class _BoardScreenState extends State<BoardScreen> {
   final NotificationRepository _notificationRepository =
-      NotificationRepository();
+      sl<NotificationRepository>();
   String? selectedBoardId;
   String selectedLandscapeStatus = 'todo';
   String _quickFilter = 'all';
@@ -43,6 +44,7 @@ class _BoardScreenState extends State<BoardScreen> {
   bool _loadingNotifications = false;
   List<AppNotification> _notifications = [];
   bool _inAppNotificationsEnabled = true;
+  final Set<String> _notifiedOverdueIds = {};
 
   @override
   void initState() {
@@ -224,7 +226,9 @@ class _BoardScreenState extends State<BoardScreen> {
     if (_quickFilter == 'mine') {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) return [];
-      return tasks.where((t) => t.assigneeId == userId).toList();
+      return tasks
+          .where((t) => t.assigneeId == userId || t.creatorId == userId)
+          .toList();
     }
     if (_quickFilter == 'overdue') {
       final now = DateTime.now();
@@ -244,11 +248,42 @@ class _BoardScreenState extends State<BoardScreen> {
         task.dueAt!.isBefore(DateTime.now());
   }
 
+  void _checkOverdueNotifications(List<Task> tasks) {
+    if (!_inAppNotificationsEnabled) return;
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    for (final task in tasks) {
+      if (_isOverdueTask(task) && !_notifiedOverdueIds.contains(task.id)) {
+        // Only notify if user is involved
+        if (task.assigneeId == userId ||
+            (task.assigneeId == null && task.creatorId == userId)) {
+          _notifiedOverdueIds.add(task.id);
+
+          _notificationRepository
+              .createNotification(
+                userId: userId,
+                taskId: task.id,
+                title: AppPreferences.tr('Công việc quá hạn', 'Overdue Task'),
+                message: AppPreferences.tr(
+                  'Công việc "${task.title}" đã quá hạn!',
+                  'Task "${task.title}" is overdue!',
+                ),
+              )
+              .then((_) => _refreshNotifications());
+        }
+      }
+    }
+  }
+
   List<Task> _tasksByStatus(List<Task> allTasks, String status) {
     if (status == 'overdue') {
       return allTasks.where(_isOverdueTask).toList();
     }
-    return allTasks.where((t) => t.status == status).toList();
+    // Only show in other columns if NOT overdue
+    return allTasks
+        .where((t) => t.status == status && !_isOverdueTask(t))
+        .toList();
   }
 
   Color _statusColor(String status) {
@@ -274,7 +309,12 @@ class _BoardScreenState extends State<BoardScreen> {
     return status;
   }
 
-  List<String> _defaultStatuses() => <String>['todo', 'doing', 'done'];
+  List<String> _defaultStatuses() => <String>[
+    'overdue',
+    'todo',
+    'doing',
+    'done',
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -452,54 +492,6 @@ class _BoardScreenState extends State<BoardScreen> {
                 });
               },
             ),
-            PopupMenuButton<String>(
-              tooltip: AppPreferences.tr('Bộ lọc nhanh', 'Quick filter'),
-              icon: const Icon(Icons.tune_rounded),
-              initialValue: _quickFilter,
-              onSelected: (value) {
-                setState(() {
-                  _quickFilter = value;
-                  if (_isSingleStatusFilter(value)) {
-                    selectedLandscapeStatus = value;
-                  }
-                });
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'all',
-                  child: Text(AppPreferences.tr('Tất cả', 'All')),
-                ),
-                PopupMenuItem(
-                  value: 'mine',
-                  child: Text(AppPreferences.tr('Việc của tôi', 'My tasks')),
-                ),
-                PopupMenuItem(
-                  value: 'overdue',
-                  child: Text(AppPreferences.tr('Quá hạn', 'Overdue')),
-                ),
-                PopupMenuItem(
-                  value: 'doing',
-                  child: Text(AppPreferences.tr('Đang làm', 'Doing')),
-                ),
-                PopupMenuItem(
-                  value: 'done',
-                  child: Text(AppPreferences.tr('Hoàn thành', 'Completed')),
-                ),
-              ],
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: () {
-                if (selectedBoardId != null) {
-                  context.read<TaskBloc>().add(
-                    LoadTasks(
-                      boardId: selectedBoardId,
-                      query: searchController.text,
-                    ),
-                  );
-                }
-              },
-            ),
             const SizedBox(width: 8),
           ],
         ),
@@ -557,6 +549,7 @@ class _BoardScreenState extends State<BoardScreen> {
           return const Center(child: CircularProgressIndicator());
         } else if (state is TaskLoaded) {
           final visibleTasks = _applyQuickFilter(state.tasks);
+          _checkOverdueNotifications(state.tasks);
           return LayoutBuilder(
             builder: (context, constraints) {
               final isWideScreen =
@@ -564,9 +557,11 @@ class _BoardScreenState extends State<BoardScreen> {
                   MediaQuery.of(context).orientation == Orientation.landscape;
               final visibleStatuses = _quickFilter == 'mine'
                   ? <String>['todo']
-                  : (_isSingleStatusFilter(_quickFilter)
-                        ? <String>[_quickFilter]
-                        : _defaultStatuses());
+                  : (_quickFilter == 'all'
+                        ? _defaultStatuses()
+                        : (_isSingleStatusFilter(_quickFilter)
+                              ? <String>[_quickFilter]
+                              : _defaultStatuses()));
 
               if (isWideScreen) {
                 return Row(
@@ -622,7 +617,11 @@ class _BoardScreenState extends State<BoardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildBoardOverview(visibleTasks),
+                        _buildBoardOverview(
+                          visibleTasks,
+                          allTasks: state.tasks,
+                          visibleStatuses: portraitStatuses,
+                        ),
                         const SizedBox(height: 12),
                         _buildQuickFilterChips(),
                         const SizedBox(height: 18),
@@ -699,13 +698,32 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
-  Widget _buildBoardOverview(List<Task> tasks) {
-    final total = tasks.length;
-    final done = tasks.where((t) => t.status == 'done').length;
-    final doing = tasks.where((t) => t.status == 'doing').length;
-    final todo = tasks.where((t) => t.status == 'todo').length;
-    final overdue = tasks.where(_isOverdueTask).length;
-    final progress = total == 0 ? 0.0 : done / total;
+  Widget _buildBoardOverview(
+    List<Task> tasks, {
+    required List<Task> allTasks,
+    required List<String> visibleStatuses,
+  }) {
+    final showDone = visibleStatuses.contains('done');
+    final showDoing = visibleStatuses.contains('doing');
+    final showTodo = visibleStatuses.contains('todo');
+    final showOverdue = visibleStatuses.contains('overdue');
+
+    final overdue = showOverdue ? tasks.where(_isOverdueTask).length : 0;
+    final done = showDone ? tasks.where((t) => t.status == 'done').length : 0;
+    // Strictly exclude overdue from todo and doing to avoid double counting
+    final doing = showDoing
+        ? tasks.where((t) => t.status == 'doing' && !_isOverdueTask(t)).length
+        : 0;
+    final todo = showTodo
+        ? tasks.where((t) => t.status == 'todo' && !_isOverdueTask(t)).length
+        : 0;
+
+    // Contextual global counts for the board
+    final boardTotal = allTasks.length;
+
+    // Total tasks used for progress calculation (from active columns)
+    final activeTotal = done + doing + todo + overdue;
+    final progress = activeTotal == 0 ? 0.0 : done / activeTotal;
     final percentText = '${(progress * 100).round()}%';
 
     return Container(
@@ -760,7 +778,7 @@ class _BoardScreenState extends State<BoardScreen> {
                     ),
                     const SizedBox(height: 1),
                     Text(
-                      AppPreferences.tr('Xong', 'Done'),
+                      AppPreferences.tr('Tiến độ', 'Progress'),
                       style: const TextStyle(
                         fontSize: 10,
                         color: Color(0xFF64748B),
@@ -779,15 +797,13 @@ class _BoardScreenState extends State<BoardScreen> {
               runSpacing: 8,
               children: [
                 _miniStat(
-                  AppPreferences.tr('Tổng', 'Total'),
-                  total,
+                  AppPreferences.tr('Toàn dự án', 'Project'),
+                  boardTotal,
                   const Color(0xFF334155),
                 ),
                 _miniStat(
-                  _quickFilter == 'mine'
-                      ? AppPreferences.tr('Việc của tôi', 'My tasks')
-                      : AppPreferences.tr('Cần làm', 'To Do'),
-                  _quickFilter == 'mine' ? total : todo,
+                  AppPreferences.tr('Cần làm', 'To Do'),
+                  todo,
                   Colors.blueAccent,
                 ),
                 _miniStat(
@@ -796,7 +812,7 @@ class _BoardScreenState extends State<BoardScreen> {
                   Colors.orangeAccent,
                 ),
                 _miniStat(
-                  AppPreferences.tr('Hoàn thành', 'Completed'),
+                  AppPreferences.tr('Hoàn thành', 'Done'),
                   done,
                   Colors.teal,
                 ),

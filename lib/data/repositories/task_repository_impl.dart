@@ -6,13 +6,16 @@ import '../../domain/entities/task.dart';
 import '../../domain/repositories/task_repository.dart';
 import '../datasources/local_database.dart';
 import '../models/task_model.dart';
+import '../repositories/notification_repository.dart';
 
 class TaskRepositoryImpl implements TaskRepository {
+  final NotificationRepository notificationRepository;
   final SupabaseClient supabaseClient;
   final LocalDatabase localDatabase;
 
   TaskRepositoryImpl({
     required this.supabaseClient,
+    required this.notificationRepository,
     LocalDatabase? localDatabase,
   }) : localDatabase = localDatabase ?? LocalDatabase();
 
@@ -52,7 +55,11 @@ class TaskRepositoryImpl implements TaskRepository {
 
       return tasks;
     } catch (_) {
-      return localDatabase.getTasks(boardId: boardId, query: query, status: status);
+      return localDatabase.getTasks(
+        boardId: boardId,
+        query: query,
+        status: status,
+      );
     }
   }
 
@@ -72,7 +79,9 @@ class TaskRepositoryImpl implements TaskRepository {
 
     await localDatabase.upsertTask(taskModel);
     try {
-      await supabaseClient.from('tasks').upsert(taskModel.toMap(), onConflict: 'id');
+      await supabaseClient
+          .from('tasks')
+          .upsert(taskModel.toMap(), onConflict: 'id');
     } catch (_) {
       await localDatabase.enqueueOperation(
         entity: 'task',
@@ -98,7 +107,35 @@ class TaskRepositoryImpl implements TaskRepository {
 
     await localDatabase.upsertTask(taskModel);
     try {
-      await supabaseClient.from('tasks').update(taskModel.toMap()).eq('id', task.id);
+      // Fetch old task to check for changes
+      final oldTaskResponse = await supabaseClient
+          .from('tasks')
+          .select('assignee_id, title')
+          .eq('id', task.id)
+          .maybeSingle();
+
+      await supabaseClient
+          .from('tasks')
+          .update(taskModel.toMap())
+          .eq('id', task.id);
+
+      // Notification logic
+      if (oldTaskResponse != null) {
+        final oldAssigneeId = oldTaskResponse['assignee_id'] as String?;
+        final newAssigneeId = task.assigneeId;
+
+        if (newAssigneeId != null && newAssigneeId != oldAssigneeId) {
+          final currentUserId = supabaseClient.auth.currentUser?.id;
+          if (newAssigneeId != currentUserId) {
+            await notificationRepository.createNotification(
+              userId: newAssigneeId,
+              taskId: task.id,
+              title: 'Công việc mới được giao',
+              message: 'Bạn đã được giao công việc: ${task.title}',
+            );
+          }
+        }
+      }
     } catch (_) {
       await localDatabase.enqueueOperation(
         entity: 'task',
@@ -130,7 +167,10 @@ class TaskRepositoryImpl implements TaskRepository {
         if (op.operation == 'add') {
           await supabaseClient.from('tasks').upsert(payload, onConflict: 'id');
         } else if (op.operation == 'update') {
-          await supabaseClient.from('tasks').update(payload).eq('id', payload['id']);
+          await supabaseClient
+              .from('tasks')
+              .update(payload)
+              .eq('id', payload['id']);
         } else if (op.operation == 'delete') {
           await supabaseClient.from('tasks').delete().eq('id', payload['id']);
         }

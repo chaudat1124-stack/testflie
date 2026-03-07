@@ -59,7 +59,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
   StreamSubscription? _authSubscription;
   bool _openingRecoveryScreen = false;
-  final FriendRepository _friendRepository = FriendRepository();
+  final FriendRepository _friendRepository = di.sl<FriendRepository>();
   final UserSettingsRepository _settingsRepository = UserSettingsRepository();
   Timer? _presenceTimer;
   String? _preferencesLoadedForUserId;
