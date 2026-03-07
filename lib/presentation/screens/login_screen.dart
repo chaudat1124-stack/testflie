@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_event.dart';
 import '../blocs/auth/auth_state.dart';
@@ -25,9 +26,55 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng nhập đầy đủ thông tin')),
+        const SnackBar(content: Text('Vui long nhap day du thong tin')),
       );
     }
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Quen mat khau'),
+          content: TextField(
+            controller: emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              hintText: 'Nhap email tai khoan',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Huy'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final email = emailController.text.trim();
+                final isValidEmail = RegExp(
+                  r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
+                ).hasMatch(email);
+                if (!isValidEmail) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Email khong hop le')),
+                  );
+                  return;
+                }
+                context.read<AuthBloc>().add(
+                  ResetPasswordRequested(email: email),
+                );
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Gửi liên kết'),
+            ),
+          ],
+        );
+      },
+    );
+    emailController.dispose();
   }
 
   @override
@@ -40,14 +87,19 @@ class _LoginScreenState extends State<LoginScreen> {
               context,
             ).showSnackBar(SnackBar(content: Text(state.message)));
           }
+          if (state is AuthActionSuccess) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(state.message)));
+          }
         },
         builder: (context, state) {
-          bool isLoading = state is AuthLoading;
+          final isLoading = state is AuthLoading;
 
           return Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
-              child: Container(
+              child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 400),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -60,7 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 24),
                     const Text(
-                      'Chào mừng trở lại',
+                      'Chao mung tro lai',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 28,
@@ -89,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextField(
                       controller: _passwordController,
                       decoration: InputDecoration(
-                        labelText: 'Mật khẩu',
+                        labelText: 'Mat khau',
                         prefixIcon: const Icon(Icons.lock),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -97,7 +149,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       obscureText: true,
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: isLoading ? null : _showForgotPasswordDialog,
+                        child: const Text('Quen mat khau?'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: isLoading ? null : _login,
                       style: ElevatedButton.styleFrom(

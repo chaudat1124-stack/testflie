@@ -46,10 +46,32 @@ class _RegisterScreenState extends State<RegisterScreen> {
     return Scaffold(
       body: BlocConsumer<AuthBloc, AuthState>(
         listener: (context, state) {
+          // 1. KHI BỊ LỖI
           if (state is AuthError) {
-            ScaffoldMessenger.of(
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Lỗi: ${state.message}'),
+                backgroundColor: Colors.red, // Hiện nền đỏ cho nổi bật
+                behavior:
+                    SnackBarBehavior.floating, // Hiển thị dạng nổi đẹp hơn
+              ),
+            );
+          }
+          // 2. KHI ĐĂNG KÝ THÀNH CÔNG
+          else if (state is Authenticated) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('🎉 Đăng ký thành công! Mời bạn đăng nhập.'),
+                backgroundColor: Colors.green, // Hiện nền xanh báo tin vui
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+
+            // 3. ĐẨY NGƯỜI DÙNG VỀ MÀN HÌNH ĐĂNG NHẬP
+            Navigator.pushReplacement(
               context,
-            ).showSnackBar(SnackBar(content: Text(state.message)));
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+            );
           }
         },
         builder: (context, state) {

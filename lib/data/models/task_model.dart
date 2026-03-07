@@ -9,6 +9,7 @@ class TaskModel extends Task {
     required super.status,
     super.assigneeId,
     super.creatorId,
+    super.dueAt,
     required super.createdAt,
   });
 
@@ -22,6 +23,9 @@ class TaskModel extends Task {
       status: map['status'] as String,
       assigneeId: map['assignee_id'] as String?,
       creatorId: map['creator_id'] as String?,
+      dueAt: map['due_at'] != null
+          ? DateTime.tryParse(map['due_at'] as String)
+          : null,
       createdAt: map['created_at'] as String,
     );
   }
@@ -36,6 +40,7 @@ class TaskModel extends Task {
       'status': status,
       if (assigneeId != null) 'assignee_id': assigneeId,
       if (creatorId != null) 'creator_id': creatorId,
+      if (dueAt != null) 'due_at': dueAt!.toUtc().toIso8601String(),
       'created_at': createdAt,
     };
   }

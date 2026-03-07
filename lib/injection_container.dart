@@ -1,4 +1,5 @@
 import 'package:get_it/get_it.dart';
+import 'data/datasources/local_database.dart';
 import 'data/repositories/task_repository_impl.dart';
 import 'domain/repositories/task_repository.dart';
 import 'domain/usecases/task_usecases.dart';
@@ -21,6 +22,7 @@ final sl = GetIt.instance; // sl viết tắt của Service Locator
 Future<void> init() async {
   // 0. Khởi tạo core (Supabase)
   sl.registerLazySingleton<SupabaseClient>(() => Supabase.instance.client);
+  sl.registerLazySingleton<LocalDatabase>(() => LocalDatabase());
 
   // 1. Khởi tạo BLoC (Factory: mỗi lần gọi tạo 1 instance mới)
   sl.registerFactory(() => AuthBloc(authRepository: sl()));
@@ -57,9 +59,9 @@ Future<void> init() async {
     () => AuthRepositoryImpl(supabaseClient: sl()),
   );
   sl.registerLazySingleton<TaskRepository>(
-    () => TaskRepositoryImpl(supabaseClient: sl()),
+    () => TaskRepositoryImpl(supabaseClient: sl(), localDatabase: sl()),
   );
   sl.registerLazySingleton<BoardRepository>(
-    () => BoardRepositoryImpl(supabaseClient: sl()),
+    () => BoardRepositoryImpl(supabaseClient: sl(), localDatabase: sl()),
   );
 }

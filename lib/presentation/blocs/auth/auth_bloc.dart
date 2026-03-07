@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../domain/repositories/auth_repository.dart';
 import 'auth_event.dart';
@@ -12,6 +11,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<SignInRequested>(_onSignInRequested);
     on<SignUpRequested>(_onSignUpRequested);
     on<SignOutRequested>(_onSignOutRequested);
+    on<ResetPasswordRequested>(_onResetPasswordRequested);
+    on<UpdatePasswordRequested>(_onUpdatePasswordRequested);
   }
 
   Future<void> _onCheckAuthStatus(
@@ -70,6 +71,36 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
       emit(Unauthenticated());
     } catch (e) {
       emit(AuthError(e.toString()));
+    }
+  }
+
+  Future<void> _onResetPasswordRequested(
+    ResetPasswordRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      await authRepository.resetPassword(email: event.email);
+      emit(const AuthActionSuccess('Đã gửi email khôi phục mật khẩu.'));
+      emit(Unauthenticated());
+    } catch (e) {
+      emit(AuthError(e.toString()));
+      emit(Unauthenticated());
+    }
+  }
+
+  Future<void> _onUpdatePasswordRequested(
+    UpdatePasswordRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(AuthLoading());
+    try {
+      await authRepository.updatePassword(newPassword: event.newPassword);
+      emit(const AuthActionSuccess('Cập nhật mật khẩu thành công.'));
+      emit(Unauthenticated());
+    } catch (e) {
+      emit(AuthError(e.toString()));
+      emit(Unauthenticated());
     }
   }
 }

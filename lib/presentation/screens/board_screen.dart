@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import '../../data/repositories/notification_repository.dart';
+import '../../domain/entities/app_notification.dart';
 import '../blocs/task_bloc.dart';
 import '../blocs/task_event.dart';
 import '../blocs/task_state.dart';
@@ -12,10 +17,9 @@ import '../../domain/entities/board.dart';
 import '../blocs/auth/auth_bloc.dart';
 import '../blocs/auth/auth_state.dart';
 import '../widgets/empty_dashboard_view.dart';
-import '../widgets/animated_menu_hint.dart';
-import '../widgets/board_drawer.dart';
 import '../widgets/task_card.dart';
 import '../widgets/board_member_dialog.dart';
+import 'workspace_menu_screen.dart';
 
 class BoardScreen extends StatefulWidget {
   const BoardScreen({super.key});
@@ -25,16 +29,24 @@ class BoardScreen extends StatefulWidget {
 }
 
 class _BoardScreenState extends State<BoardScreen> {
+  final NotificationRepository _notificationRepository = NotificationRepository();
   String? selectedBoardId;
   String selectedLandscapeStatus = 'todo';
+  String _quickFilter = 'all';
   bool isSearching = false;
   final TextEditingController searchController = TextEditingController();
   final PageController _pageController = PageController(viewportFraction: 0.88);
+  Timer? _notificationTimer;
+  int _unreadNotificationCount = 0;
+  bool _loadingNotifications = false;
+  List<AppNotification> _notifications = [];
+  bool _inAppNotificationsEnabled = true;
 
   @override
   void initState() {
     super.initState();
     searchController.addListener(_onSearchChanged);
+    _initNotificationFlow();
   }
 
   @override
@@ -42,7 +54,140 @@ class _BoardScreenState extends State<BoardScreen> {
     searchController.removeListener(_onSearchChanged);
     searchController.dispose();
     _pageController.dispose();
+    _notificationTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _refreshNotifications() async {
+    if (!_inAppNotificationsEnabled) {
+      if (mounted) {
+        setState(() {
+          _unreadNotificationCount = 0;
+          _notifications = [];
+        });
+      }
+      return;
+    }
+    if (_loadingNotifications) return;
+    setState(() {
+      _loadingNotifications = true;
+    });
+    try {
+      final unread = await _notificationRepository.getUnreadCount();
+      final notifications = await _notificationRepository.getNotifications();
+      if (!mounted) return;
+      setState(() {
+        _unreadNotificationCount = unread;
+        _notifications = notifications;
+      });
+    } catch (_) {
+      // ignore
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingNotifications = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _initNotificationFlow() async {
+    await _loadNotificationSetting();
+    if (!_inAppNotificationsEnabled) return;
+    await _refreshNotifications();
+    _notificationTimer?.cancel();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshNotifications(),
+    );
+  }
+
+  Future<void> _loadNotificationSetting() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      _inAppNotificationsEnabled = true;
+      return;
+    }
+    try {
+      final response = await Supabase.instance.client
+          .from('user_settings')
+          .select('in_app_notifications')
+          .eq('user_id', userId)
+          .maybeSingle();
+      final enabled = (response?['in_app_notifications'] as bool?) ?? true;
+      if (!mounted) return;
+      setState(() {
+        _inAppNotificationsEnabled = enabled;
+      });
+    } catch (_) {
+      _inAppNotificationsEnabled = true;
+    }
+  }
+
+  Future<void> _markAllNotificationsRead() async {
+    await _notificationRepository.markAllAsRead();
+    await _refreshNotifications();
+  }
+
+  Future<void> _markNotificationRead(String id) async {
+    await _notificationRepository.markAsRead(id);
+    await _refreshNotifications();
+  }
+
+  void _showNotificationsDialog() {
+    showDialog(
+      context: context,
+      builder: (_) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              const Expanded(child: Text('Thông báo')),
+              TextButton(
+                onPressed: _notifications.isEmpty ? null : _markAllNotificationsRead,
+                child: const Text('Đánh dấu đã đọc'),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 500,
+            child: _loadingNotifications
+                ? const Center(child: CircularProgressIndicator())
+                : _notifications.isEmpty
+                ? const Text('Chưa có thông báo nào')
+                : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _notifications.length,
+                    separatorBuilder: (_, _) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final item = _notifications[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          item.title,
+                          style: TextStyle(
+                            fontWeight: item.isRead ? FontWeight.w500 : FontWeight.w700,
+                          ),
+                        ),
+                        subtitle: Text(item.message),
+                        trailing: item.isRead
+                            ? const Icon(Icons.done_all, size: 18, color: Colors.green)
+                            : TextButton(
+                                onPressed: () => _markNotificationRead(item.id),
+                                child: const Text('Đã đọc'),
+                              ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Đóng'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _onSearchChanged() {
@@ -52,6 +197,60 @@ class _BoardScreenState extends State<BoardScreen> {
       );
     }
   }
+
+  List<Task> _applyQuickFilter(List<Task> tasks) {
+    if (_quickFilter == 'all') return tasks;
+    if (_quickFilter == 'mine') {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return [];
+      return tasks.where((t) => t.assigneeId == userId).toList();
+    }
+    if (_quickFilter == 'overdue') {
+      final now = DateTime.now();
+      return tasks
+          .where((t) => t.dueAt != null && t.status != 'done' && t.dueAt!.isBefore(now))
+          .toList();
+    }
+    return tasks.where((t) => t.status == _quickFilter).toList();
+  }
+
+  bool _isOverdueTask(Task task) {
+    return task.dueAt != null &&
+        task.status != 'done' &&
+        task.dueAt!.isBefore(DateTime.now());
+  }
+
+  List<Task> _tasksByStatus(List<Task> allTasks, String status) {
+    if (status == 'overdue') {
+      return allTasks.where(_isOverdueTask).toList();
+    }
+    return allTasks.where((t) => t.status == status).toList();
+  }
+
+  Color _statusColor(String status) {
+    if (status == 'todo') return Colors.blueAccent;
+    if (status == 'doing') return Colors.orangeAccent;
+    if (status == 'done') return Colors.teal;
+    if (status == 'overdue') return Colors.redAccent;
+    return Colors.blueGrey;
+  }
+
+  bool _isSingleStatusFilter(String value) {
+    return value == 'todo' ||
+        value == 'doing' ||
+        value == 'done' ||
+        value == 'overdue';
+  }
+
+  String _statusTitle(String status) {
+    if (status == 'todo') return 'Cần làm';
+    if (status == 'doing') return 'Đang làm';
+    if (status == 'done') return 'Hoàn thành';
+    if (status == 'overdue') return 'Quá hạn';
+    return status;
+  }
+
+  List<String> _defaultStatuses() => <String>['todo', 'doing', 'done'];
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +269,7 @@ class _BoardScreenState extends State<BoardScreen> {
                   (b) => b.id == selectedBoardId,
                 );
 
-                if (selectedBoardId == null || !isBoardCurrentSelectedExists) {
+                if (selectedBoardId != null && !isBoardCurrentSelectedExists) {
                   // Mặc định chọn Bảng mới nhất (nằm ở cuối list)
                   _selectBoard(state.boards.last.id);
                 }
@@ -93,8 +292,17 @@ class _BoardScreenState extends State<BoardScreen> {
       ],
       child: Scaffold(
         appBar: AppBar(
-          leadingWidth: selectedBoardId == null ? 140 : 56,
-          leading: AnimatedMenuHint(showHint: selectedBoardId == null),
+          leading: IconButton(
+            icon: const Icon(Icons.person_outline_rounded),
+            tooltip: 'Trang cá nhân',
+            onPressed: () {
+              setState(() {
+                selectedBoardId = null;
+                isSearching = false;
+                searchController.clear();
+              });
+            },
+          ),
           title: isSearching
               ? TextField(
                   controller: searchController,
@@ -115,14 +323,67 @@ class _BoardScreenState extends State<BoardScreen> {
                 ),
           centerTitle: !isSearching,
           actions: [
+            IconButton(
+              tooltip: 'Thông báo',
+              onPressed: () async {
+                await _loadNotificationSetting();
+                if (!_inAppNotificationsEnabled) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Thông báo trong app đang tắt trong Cài đặt'),
+                    ),
+                  );
+                  return;
+                }
+                await _refreshNotifications();
+                if (!mounted) return;
+                _showNotificationsDialog();
+              },
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.notifications_none),
+                  if (_unreadNotificationCount > 0)
+                    Positioned(
+                      right: -4,
+                      top: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: Colors.redAccent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(minWidth: 18, minHeight: 14),
+                        child: Text(
+                          _unreadNotificationCount > 99
+                              ? '99+'
+                              : _unreadNotificationCount.toString(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
             if (selectedBoardId != null)
               BlocBuilder<BoardBloc, BoardState>(
                 builder: (context, state) {
                   if (state is BoardLoaded) {
-                    final currentBoard = state.boards.firstWhere(
-                      (b) => b.id == selectedBoardId,
-                      orElse: () => state.boards.first,
-                    );
+                    if (state.boards.isEmpty) {
+                      return const SizedBox.shrink();
+                    }
+                    Board currentBoard = state.boards.first;
+                    for (final board in state.boards) {
+                      if (board.id == selectedBoardId) {
+                        currentBoard = board;
+                        break;
+                      }
+                    }
                     return IconButton(
                       icon: const Icon(Icons.group_add_outlined),
                       tooltip: 'Thành viên',
@@ -153,6 +414,26 @@ class _BoardScreenState extends State<BoardScreen> {
                 });
               },
             ),
+            PopupMenuButton<String>(
+              tooltip: 'Bộ lọc nhanh',
+              icon: const Icon(Icons.tune_rounded),
+              initialValue: _quickFilter,
+              onSelected: (value) {
+                setState(() {
+                  _quickFilter = value;
+                  if (_isSingleStatusFilter(value)) {
+                    selectedLandscapeStatus = value;
+                  }
+                });
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'all', child: Text('Tất cả')),
+                PopupMenuItem(value: 'mine', child: Text('Việc của tôi')),
+                PopupMenuItem(value: 'overdue', child: Text('Quá hạn')),
+                PopupMenuItem(value: 'doing', child: Text('Đang làm')),
+                PopupMenuItem(value: 'done', child: Text('Hoàn thành')),
+              ],
+            ),
             IconButton(
               icon: const Icon(Icons.refresh),
               onPressed: () {
@@ -169,16 +450,10 @@ class _BoardScreenState extends State<BoardScreen> {
             const SizedBox(width: 8),
           ],
         ),
-        drawer: BoardDrawer(
-          selectedBoardId: selectedBoardId,
-          onSelectBoard: _selectBoard,
-          onAddBoard: _showAddBoardDialog,
-          onDeleteBoard: _showDeleteBoardDialog,
-        ),
         body: selectedBoardId == null
             ? EmptyDashboardView(
                 onAddBoard: () => _showAddBoardDialog(context),
-                onOpenMenu: () => Scaffold.of(context).openDrawer(),
+                onOpenMenu: _openWorkspaceMenu,
               )
             : _buildBoardContent(context),
         floatingActionButton: selectedBoardId == null
@@ -209,17 +484,36 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  Future<void> _openWorkspaceMenu() async {
+    final selected = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => WorkspaceMenuScreen(selectedBoardId: selectedBoardId),
+      ),
+    );
+    if (!mounted) return;
+    if (selected != null && selected.isNotEmpty) {
+      _selectBoard(selected);
+    }
+  }
+
   Widget _buildBoardContent(BuildContext context) {
     return BlocBuilder<TaskBloc, TaskState>(
       builder: (context, state) {
         if (state is TaskLoading) {
           return const Center(child: CircularProgressIndicator());
         } else if (state is TaskLoaded) {
+          final visibleTasks = _applyQuickFilter(state.tasks);
           return LayoutBuilder(
             builder: (context, constraints) {
               final isWideScreen =
                   constraints.maxWidth > 600 ||
                   MediaQuery.of(context).orientation == Orientation.landscape;
+              final visibleStatuses = _quickFilter == 'mine'
+                  ? <String>['todo']
+                  : (_isSingleStatusFilter(_quickFilter)
+                        ? <String>[_quickFilter]
+                        : _defaultStatuses());
 
               if (isWideScreen) {
                 return Row(
@@ -230,26 +524,16 @@ class _BoardScreenState extends State<BoardScreen> {
                       width: 250,
                       color: Colors.white,
                       child: Column(
-                        children: [
-                          _buildMenuItem(
-                            'Cần làm',
-                            'todo',
-                            Colors.blueAccent,
-                            state.tasks,
-                          ),
-                          _buildMenuItem(
-                            'Đang làm',
-                            'doing',
-                            Colors.orangeAccent,
-                            state.tasks,
-                          ),
-                          _buildMenuItem(
-                            'Hoàn thành',
-                            'done',
-                            Colors.teal,
-                            state.tasks,
-                          ),
-                        ],
+                        children: visibleStatuses
+                            .map(
+                              (status) => _buildMenuItem(
+                                _statusTitle(status),
+                                status,
+                                _statusColor(status),
+                                visibleTasks,
+                              ),
+                            )
+                            .toList(),
                       ),
                     ),
                     // Kẻ dọc phân cách
@@ -260,7 +544,7 @@ class _BoardScreenState extends State<BoardScreen> {
                         color: Colors.grey[50], // Nền nhạt cho khu vực thẻ
                         child: _buildLandscapeTaskContent(
                           context,
-                          state.tasks,
+                          visibleTasks,
                           selectedLandscapeStatus,
                         ),
                       ),
@@ -270,6 +554,8 @@ class _BoardScreenState extends State<BoardScreen> {
               }
 
               // Mặc định: Giao diện dọc (Portrait) - Menu sổ xuống
+              final portraitStatuses = visibleStatuses;
+
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.symmetric(
@@ -283,29 +569,21 @@ class _BoardScreenState extends State<BoardScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildColumn(
-                          context,
-                          'Cần làm',
-                          'todo',
-                          state.tasks,
-                          Colors.blueAccent,
-                        ),
-                        const SizedBox(height: 24),
-                        _buildColumn(
-                          context,
-                          'Đang làm',
-                          'doing',
-                          state.tasks,
-                          Colors.orangeAccent,
-                        ),
-                        const SizedBox(height: 24),
-                        _buildColumn(
-                          context,
-                          'Hoàn thành',
-                          'done',
-                          state.tasks,
-                          Colors.teal,
-                        ),
+                        _buildBoardOverview(visibleTasks),
+                        const SizedBox(height: 12),
+                        _buildQuickFilterChips(),
+                        const SizedBox(height: 18),
+                        for (var i = 0; i < portraitStatuses.length; i++) ...[
+                          _buildColumn(
+                            context,
+                            _statusTitle(portraitStatuses[i]),
+                            portraitStatuses[i],
+                            visibleTasks,
+                            _statusColor(portraitStatuses[i]),
+                          ),
+                          if (i != portraitStatuses.length - 1)
+                            const SizedBox(height: 24),
+                        ],
                         const SizedBox(height: 60), // Space for FAB
                       ],
                     ),
@@ -322,6 +600,156 @@ class _BoardScreenState extends State<BoardScreen> {
     );
   }
 
+  Widget _buildQuickFilterChips() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _filterChip('all', 'Tất cả'),
+          const SizedBox(width: 8),
+          _filterChip('mine', 'Việc của tôi'),
+          const SizedBox(width: 8),
+          _filterChip('overdue', 'Quá hạn'),
+          const SizedBox(width: 8),
+          _filterChip('doing', 'Đang làm'),
+          const SizedBox(width: 8),
+          _filterChip('done', 'Hoàn thành'),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String value, String label) {
+    final selected = _quickFilter == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() {
+        _quickFilter = value;
+        if (_isSingleStatusFilter(value)) {
+          selectedLandscapeStatus = value;
+        }
+      }),
+      selectedColor: Colors.blueAccent.withOpacity(0.16),
+      labelStyle: TextStyle(
+        color: selected ? Colors.blueAccent : Colors.black87,
+        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget _buildBoardOverview(List<Task> tasks) {
+    final total = tasks.length;
+    final done = tasks.where((t) => t.status == 'done').length;
+    final doing = tasks.where((t) => t.status == 'doing').length;
+    final todo = tasks.where((t) => t.status == 'todo').length;
+    final overdue = tasks.where(_isOverdueTask).length;
+    final progress = total == 0 ? 0.0 : done / total;
+    final percentText = '${(progress * 100).round()}%';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 96,
+            height: 96,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 9,
+                  strokeCap: StrokeCap.round,
+                  backgroundColor: const Color(0xFFE2E8F0),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                ),
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                  ),
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      percentText,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 24,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    const Text(
+                      'Done',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _miniStat('Tổng', total, const Color(0xFF334155)),
+                _miniStat(
+                  _quickFilter == 'mine' ? 'Việc của tôi' : 'Cần làm',
+                  _quickFilter == 'mine' ? total : todo,
+                  Colors.blueAccent,
+                ),
+                _miniStat('Đang làm', doing, Colors.orangeAccent),
+                _miniStat('Hoàn thành', done, Colors.teal),
+                _miniStat('Quá hạn', overdue, Colors.redAccent),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, int value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _buildMenuItem(
     String title,
     String status,
@@ -329,20 +757,22 @@ class _BoardScreenState extends State<BoardScreen> {
     List<Task> allTasks,
   ) {
     final isSelected = selectedLandscapeStatus == status;
-    final tasksCount = allTasks.where((t) => t.status == status).length;
+    final tasksCount = _tasksByStatus(allTasks, status).length;
 
     return DragTarget<Task>(
-      onWillAcceptWithDetails: (details) => details.data.status != status,
+      onWillAcceptWithDetails: (details) => status != 'overdue' && details.data.status != status,
       onAcceptWithDetails: (details) {
+        if (status == 'overdue') return;
         final droppedTask = details.data;
         final updatedTask = Task(
           id: droppedTask.id,
           boardId: droppedTask.boardId,
           title: droppedTask.title,
           description: droppedTask.description,
-          status: status,
+          status: status == 'overdue' ? droppedTask.status : status,
           assigneeId: droppedTask.assigneeId,
           creatorId: droppedTask.creatorId,
+          dueAt: droppedTask.dueAt,
           createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
@@ -430,23 +860,23 @@ class _BoardScreenState extends State<BoardScreen> {
     List<Task> allTasks,
     String status,
   ) {
-    final tasks = allTasks.where((t) => t.status == status).toList();
-    Color accentColor = status == 'todo'
-        ? Colors.blueAccent
-        : (status == 'doing' ? Colors.orangeAccent : Colors.teal);
+    final tasks = _tasksByStatus(allTasks, status);
+    final accentColor = _statusColor(status);
 
     return DragTarget<Task>(
-      onWillAcceptWithDetails: (details) => details.data.status != status,
+      onWillAcceptWithDetails: (details) => status != 'overdue' && details.data.status != status,
       onAcceptWithDetails: (details) {
+        if (status == 'overdue') return;
         final droppedTask = details.data;
         final updatedTask = Task(
           id: droppedTask.id,
           boardId: droppedTask.boardId,
           title: droppedTask.title,
           description: droppedTask.description,
-          status: status,
+          status: status == 'overdue' ? droppedTask.status : status,
           assigneeId: droppedTask.assigneeId,
           creatorId: droppedTask.creatorId,
+          dueAt: droppedTask.dueAt,
           createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
@@ -529,20 +959,22 @@ class _BoardScreenState extends State<BoardScreen> {
     List<Task> allTasks,
     Color accentColor,
   ) {
-    final tasks = allTasks.where((t) => t.status == status).toList();
+    final tasks = _tasksByStatus(allTasks, status);
 
     return DragTarget<Task>(
-      onWillAcceptWithDetails: (details) => details.data.status != status,
+      onWillAcceptWithDetails: (details) => status != 'overdue' && details.data.status != status,
       onAcceptWithDetails: (details) {
+        if (status == 'overdue') return;
         final droppedTask = details.data;
         final updatedTask = Task(
           id: droppedTask.id,
           boardId: droppedTask.boardId,
           title: droppedTask.title,
           description: droppedTask.description,
-          status: status,
+          status: status == 'overdue' ? droppedTask.status : status,
           assigneeId: droppedTask.assigneeId,
           creatorId: droppedTask.creatorId,
+          dueAt: droppedTask.dueAt,
           createdAt: droppedTask.createdAt,
         );
         context.read<TaskBloc>().add(UpdateTaskEvent(updatedTask));
@@ -683,7 +1115,8 @@ class _BoardScreenState extends State<BoardScreen> {
       context: context,
       builder: (context) => Center(
         child: SingleChildScrollView(
-          child: AlertDialog(
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => AlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -741,6 +1174,7 @@ class _BoardScreenState extends State<BoardScreen> {
                 child: const Text('Thêm'),
               ),
             ],
+            ),
           ),
         ),
       ),
@@ -795,93 +1229,257 @@ class _BoardScreenState extends State<BoardScreen> {
   void _showAddTaskDialog(BuildContext context) {
     final titleController = TextEditingController();
     final descController = TextEditingController();
+    DateTime? selectedDueAt;
 
     showDialog(
       context: context,
       builder: (context) => Center(
         child: SingleChildScrollView(
-          child: AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: const Text(
-              'Thêm công việc mới',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            content: SizedBox(
-              width: 400, // Cố định chiều rộng để form không bị bóp méo
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: titleController,
-                    decoration: InputDecoration(
-                      labelText: 'Tiêu đề',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                    ),
-                    autofocus: true,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: descController,
-                    decoration: InputDecoration(
-                      labelText: 'Mô tả (không bắt buộc)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
+          child: StatefulBuilder(
+            builder: (context, setDialogState) => Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
               ),
-            ),
-            actionsPadding: const EdgeInsets.all(16),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text(
-                  'Hủy',
-                  style: TextStyle(color: Colors.black54),
+              child: Container(
+                width: 420,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 24,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.task_alt_rounded,
+                            color: Colors.blueAccent,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Text(
+                            'Them cong viec moi',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    TextField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        hintText: 'Tieu de',
+                        prefixIcon: const Icon(Icons.title_rounded, size: 20),
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Mo ta (khong bat buoc)',
+                        alignLabelWithHint: true,
+                        filled: true,
+                        fillColor: const Color(0xFFF8FAFC),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final now = DateTime.now();
+                        final pickedDate = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDueAt ?? now,
+                          firstDate: DateTime(now.year - 1, 1, 1),
+                          lastDate: DateTime(now.year + 5, 12, 31),
+                        );
+                        if (pickedDate == null) return;
+
+                        final pickedTime = await showTimePicker(
+                          context: context,
+                          initialTime: TimeOfDay.fromDateTime(
+                            selectedDueAt ?? now,
+                          ),
+                        );
+
+                        setDialogState(() {
+                          selectedDueAt = DateTime(
+                            pickedDate.year,
+                            pickedDate.month,
+                            pickedDate.day,
+                            pickedTime?.hour ?? 23,
+                            pickedTime?.minute ?? 59,
+                          );
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: selectedDueAt == null
+                                ? const Color(0xFFE2E8F0)
+                                : Colors.blueAccent.withOpacity(0.35),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 20,
+                              color: selectedDueAt == null
+                                  ? const Color(0xFF64748B)
+                                  : Colors.blueAccent,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                selectedDueAt == null
+                                    ? 'Han hoan thanh (khong bat buoc)'
+                                    : 'Han: '
+                                        '${selectedDueAt!.day.toString().padLeft(2, '0')}/'
+                                        '${selectedDueAt!.month.toString().padLeft(2, '0')}/'
+                                        '${selectedDueAt!.year} '
+                                        '${selectedDueAt!.hour.toString().padLeft(2, '0')}:'
+                                        '${selectedDueAt!.minute.toString().padLeft(2, '0')}',
+                                style: TextStyle(
+                                  color: selectedDueAt == null
+                                      ? const Color(0xFF64748B)
+                                      : const Color(0xFF1E293B),
+                                  fontWeight: selectedDueAt == null
+                                      ? FontWeight.w500
+                                      : FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            if (selectedDueAt != null)
+                              InkWell(
+                                onTap: () => setDialogState(
+                                  () => selectedDueAt = null,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(4),
+                                  child: Icon(
+                                    Icons.close_rounded,
+                                    size: 18,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text(
+                            'Huy',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: () {
+                            if (titleController.text.trim().isEmpty ||
+                                selectedBoardId == null) {
+                              return;
+                            }
+                            final authState = context.read<AuthBloc>().state;
+                            final userId = authState is Authenticated
+                                ? authState.user.id
+                                : null;
+                            final task = Task(
+                              id: const Uuid().v4(),
+                              boardId: selectedBoardId!,
+                              title: titleController.text.trim(),
+                              description: descController.text.trim(),
+                              status: 'todo',
+                              creatorId: userId,
+                              createdAt: DateTime.now().toIso8601String(),
+                              dueAt: selectedDueAt,
+                            );
+                            context.read<TaskBloc>().add(AddTaskEvent(task));
+                            Navigator.pop(context);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 12,
+                            ),
+                            backgroundColor: Colors.blueAccent,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'Them cong viec',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              ElevatedButton(
-                onPressed: () {
-                  if (titleController.text.trim().isEmpty ||
-                      selectedBoardId == null) {
-                    return;
-                  }
-                  final authState = context.read<AuthBloc>().state;
-                  final userId = authState is Authenticated
-                      ? authState.user.id
-                      : null;
-                  final task = Task(
-                    id: const Uuid().v4(),
-                    boardId: selectedBoardId!,
-                    title: titleController.text.trim(),
-                    description: descController.text.trim(),
-                    status: 'todo',
-                    creatorId: userId,
-                    createdAt: DateTime.now().toIso8601String(),
-                  );
-                  context.read<TaskBloc>().add(AddTaskEvent(task));
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueAccent,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                child: const Text('Thêm công việc'),
-              ),
-            ],
+            ),
           ),
         ),
       ),

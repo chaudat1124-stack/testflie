@@ -8,9 +8,9 @@ import '../blocs/board_state.dart';
 
 class BoardDrawer extends StatelessWidget {
   final String? selectedBoardId;
-  final Function(String) onSelectBoard;
-  final Function(BuildContext) onAddBoard;
-  final Function(BuildContext, Board) onDeleteBoard;
+  final ValueChanged<String> onSelectBoard;
+  final void Function(BuildContext) onAddBoard;
+  final void Function(BuildContext, Board) onDeleteBoard;
 
   const BoardDrawer({
     super.key,
