@@ -31,16 +31,19 @@ class TaskBloc extends Bloc<TaskEvent, TaskState> {
     currentQuery = event.query ?? currentQuery;
     currentStatus = event.status ?? currentStatus;
 
-    emit(TaskLoading()); // Báo cho UI biết là đang tải
+    final currentState = state;
+    if (currentState is! TaskLoaded) {
+      emit(TaskLoading()); // Chỉ hiện loading nếu chưa có dữ liệu nào
+    }
     try {
       final tasks = await getTasks.call(
         boardId: currentBoardId,
         query: currentQuery,
         status: currentStatus,
-      ); // Gọi xuống Usecase
-      emit(TaskLoaded(tasks)); // Tải xong thì quăng dữ liệu ra
+      );
+      emit(TaskLoaded(tasks));
     } catch (e) {
-      emit(TaskError(e.toString())); // Bị lỗi thì quăng lỗi ra
+      emit(TaskError(e.toString()));
     }
   }
 

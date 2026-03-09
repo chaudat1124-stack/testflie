@@ -22,7 +22,10 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
   }
 
   Future<void> _onLoadBoards(LoadBoards event, Emitter<BoardState> emit) async {
-    emit(BoardLoading());
+    final currentState = state;
+    if (currentState is! BoardLoaded) {
+      emit(BoardLoading());
+    }
     try {
       final boards = await getBoards.call();
       emit(BoardLoaded(boards));

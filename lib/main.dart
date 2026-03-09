@@ -212,15 +212,12 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
             darkTheme: _darkTheme,
             home: BlocBuilder<AuthBloc, AuthState>(
               builder: (context, state) {
-                if (state is AuthLoading) {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
-                }
                 if (state is Authenticated) {
                   unawaited(_syncAppPreferences());
                   return const BoardScreen();
                 }
+                // Nếu đang loading (ví qua browser), ta vẫn giữ LoginScreen
+                // vì LoginScreen đã có cơ chế hiển thị loading/spinner riêng.
                 return const LoginScreen();
               },
             ),

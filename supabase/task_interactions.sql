@@ -1258,15 +1258,25 @@ declare
   v_email_enabled boolean;
   v_in_app_enabled boolean;
 begin
-  -- Check settings
+  -- Initialize defaults
+  v_email_enabled := true;
+  v_in_app_enabled := true;
+  v_sender_name := 'Một người dùng';
+
+  -- Check settings if they exist
   select us.email_notifications, us.in_app_notifications 
   into v_email_enabled, v_in_app_enabled
   from public.user_settings us
   where us.user_id = new.recipient_id;
 
+  -- Get sender name safely
   select coalesce(display_name, 'Một người dùng') into v_sender_name
   from public.profiles
   where id = new.sender_id;
+
+  if v_sender_name is null then
+    v_sender_name := 'Một người dùng';
+  end if;
 
   -- 1. In-app notification
   if coalesce(v_in_app_enabled, true) = true then
@@ -1309,6 +1319,9 @@ begin
     end if;
   end if;
   
+  return new;
+exception when others then
+  -- Basic error handling to ensure message is still sent even if notification fails
   return new;
 end;
 $$;

@@ -36,10 +36,6 @@ class _EmptyDashboardViewState extends State<EmptyDashboardView> {
   int _doneTasks = 0;
   int _friendCount = 0;
 
-  bool _isMissingColumnError(Object error) {
-    return error is PostgrestException && error.code == '42703';
-  }
-
   @override
   void initState() {
     super.initState();
@@ -72,80 +68,53 @@ class _EmptyDashboardViewState extends State<EmptyDashboardView> {
     }
 
     try {
-      Map<String, dynamic>? profile;
-      try {
-        final response = await _client
+      // Chạy tất cả các query đồng thời để tối ưu hiệu năng.
+      final results = await Future.wait<dynamic>([
+        // 0. Profile fetch
+        _client
             .from('profiles')
             .select('display_name,email,avatar_url,bio')
             .eq('id', userId)
-            .maybeSingle();
-        profile = response;
-      } catch (e) {
-        if (!_isMissingColumnError(e)) rethrow;
-        final response = await _client
-            .from('profiles')
-            .select('display_name,email,avatar_url')
-            .eq('id', userId)
-            .maybeSingle();
-        profile = response;
-      }
-
-      int ownedBoards = 0;
-      int joinedBoards = 0;
-      int assignedTasksCount = 0;
-      int doneTasksCount = 0;
-      int friendCount = 0;
-
-      try {
-        final ownedBoardsResponse = await _client
-            .from('boards')
-            .select('id')
-            .eq('owner_id', userId);
-        ownedBoards = (ownedBoardsResponse as List).length;
-      } catch (_) {}
-
-      try {
-        final joinedBoardsResponse = await _client
-            .from('board_members')
-            .select('board_id')
-            .eq('user_id', userId);
-        final totalJoined = (joinedBoardsResponse as List).length;
-        // Bảng tham gia = Tổng số bảng là thành viên - Số bảng mình sở hữu
-        joinedBoards = totalJoined > ownedBoards
-            ? totalJoined - ownedBoards
-            : 0;
-      } catch (_) {}
-
-      try {
-        final assignedTasksResponse = await _client
+            .maybeSingle(),
+        // 1. Owned boards count
+        _client.from('boards').select('id').eq('owner_id', userId),
+        // 2. Joined boards count
+        _client.from('board_members').select('board_id').eq('user_id', userId),
+        // 3. Assigned tasks (including status)
+        _client
             .from('tasks')
             .select('id, status, task_assignees!inner(user_id)')
-            .eq('task_assignees.user_id', userId);
-
-        final assignedTasks = (assignedTasksResponse as List);
-        assignedTasksCount = assignedTasks.length;
-        doneTasksCount = assignedTasks
-            .where((item) => (item as Map<String, dynamic>)['status'] == 'done')
-            .length;
-      } catch (_) {}
-
-      try {
-        // Đếm bạn bè theo cách mới (tìm cả 2 chiều)
-        final friendResponse = await _client
+            .eq('task_assignees.user_id', userId),
+        // 4. Friendships count
+        _client
             .from('friendships')
             .select('user_id, friend_id')
-            .or('user_id.eq.$userId,friend_id.eq.$userId');
+            .or('user_id.eq.$userId,friend_id.eq.$userId'),
+      ]);
 
-        final allRelated = friendResponse as List;
-        final uniqueFriends = <String>{};
-        for (final item in allRelated) {
-          final m = item as Map<String, dynamic>;
-          if (m['user_id'] != userId) uniqueFriends.add(m['user_id'] as String);
-          if (m['friend_id'] != userId)
-            uniqueFriends.add(m['friend_id'] as String);
-        }
-        friendCount = uniqueFriends.length;
-      } catch (_) {}
+      final profile = results[0] as Map<String, dynamic>?;
+      final ownedBoardsList = results[1] as List;
+      final joinedBoardsList = results[2] as List;
+      final assignedTasks = results[3] as List;
+      final friendshipsList = results[4] as List;
+
+      // Tính toán kết quả
+      final ownedBoardsCount = ownedBoardsList.length;
+      final joinedBoardsCount = joinedBoardsList.length > ownedBoardsCount
+          ? joinedBoardsList.length - ownedBoardsCount
+          : 0;
+      final assignedTasksCount = assignedTasks.length;
+      final doneTasksCount = assignedTasks
+          .where((item) => (item as Map<String, dynamic>)['status'] == 'done')
+          .length;
+
+      final uniqueFriends = <String>{};
+      for (final item in friendshipsList) {
+        final m = item as Map<String, dynamic>;
+        if (m['user_id'] != userId) uniqueFriends.add(m['user_id'] as String);
+        if (m['friend_id'] != userId)
+          uniqueFriends.add(m['friend_id'] as String);
+      }
 
       if (!mounted) return;
       setState(() {
@@ -156,14 +125,14 @@ class _EmptyDashboardViewState extends State<EmptyDashboardView> {
         _bio = (profile?['bio'] as String?) ?? '';
         _avatarUrl = profile?['avatar_url'] as String?;
 
-        _ownedBoards = ownedBoards;
-        _joinedBoards = joinedBoards;
+        _ownedBoards = ownedBoardsCount;
+        _joinedBoards = joinedBoardsCount;
         _assignedTasks = assignedTasksCount;
         _doneTasks = doneTasksCount;
-        _friendCount = friendCount;
+        _friendCount = uniqueFriends.length;
       });
     } catch (_) {
-      // Keep auth fallback values.
+      // Keep fallback values
     } finally {
       if (mounted) {
         setState(() => _loading = false);

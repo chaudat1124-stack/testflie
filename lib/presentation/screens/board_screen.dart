@@ -53,12 +53,17 @@ class _BoardScreenState extends State<BoardScreen> {
   List<AppNotification> _notifications = [];
   bool _inAppNotificationsEnabled = true;
   final Set<String> _notifiedOverdueIds = {};
+  RealtimeChannel? _notificationChannel;
+  RealtimeChannel? _boardsChannel;
+  RealtimeChannel? _tasksChannel;
 
   @override
   void initState() {
     super.initState();
     searchController.addListener(_onSearchChanged);
     _initNotificationFlow();
+    _subscribeToNotifications();
+    _subscribeToBoards();
   }
 
   @override
@@ -67,6 +72,9 @@ class _BoardScreenState extends State<BoardScreen> {
     searchController.dispose();
     _pageController.dispose();
     _notificationTimer?.cancel();
+    _unsubscribeFromNotifications();
+    _unsubscribeFromBoards();
+    _unsubscribeFromTasks();
     super.dispose();
   }
 
@@ -85,8 +93,13 @@ class _BoardScreenState extends State<BoardScreen> {
       _loadingNotifications = true;
     });
     try {
-      final unread = await _notificationRepository.getUnreadCount();
-      final notifications = await _notificationRepository.getNotifications();
+      final results = await Future.wait([
+        _notificationRepository.getUnreadCount(),
+        _notificationRepository.getNotifications(),
+      ]);
+      final unread = results[0] as int;
+      final notifications = results[1] as List<AppNotification>;
+
       if (!mounted) return;
       setState(() {
         _unreadNotificationCount = unread;
@@ -133,6 +146,94 @@ class _BoardScreenState extends State<BoardScreen> {
       });
     } catch (_) {
       _inAppNotificationsEnabled = true;
+    }
+  }
+
+  void _subscribeToNotifications() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    _notificationChannel = Supabase.instance.client
+        .channel('public:user_notifications:user_id=eq.$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'user_notifications',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            _refreshNotifications();
+          },
+        )
+        .subscribe();
+  }
+
+  void _unsubscribeFromNotifications() {
+    if (_notificationChannel != null) {
+      Supabase.instance.client.removeChannel(_notificationChannel!);
+      _notificationChannel = null;
+    }
+  }
+
+  void _subscribeToBoards() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    _boardsChannel = Supabase.instance.client
+        .channel('public:board_members:user_id=eq.$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'board_members',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: (payload) {
+            context.read<BoardBloc>().add(LoadBoards());
+          },
+        )
+        .subscribe();
+  }
+
+  void _unsubscribeFromBoards() {
+    if (_boardsChannel != null) {
+      Supabase.instance.client.removeChannel(_boardsChannel!);
+      _boardsChannel = null;
+    }
+  }
+
+  void _subscribeToTasks(String boardId) {
+    _unsubscribeFromTasks(); // Hủy sub cũ trước khi sub mới
+
+    _tasksChannel = Supabase.instance.client
+        .channel('public:tasks:board_id=eq.$boardId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'tasks',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'board_id',
+            value: boardId,
+          ),
+          callback: (payload) {
+            context.read<TaskBloc>().add(
+              LoadTasks(boardId: boardId, query: searchController.text),
+            );
+          },
+        )
+        .subscribe();
+  }
+
+  void _unsubscribeFromTasks() {
+    if (_tasksChannel != null) {
+      Supabase.instance.client.removeChannel(_tasksChannel!);
+      _tasksChannel = null;
     }
   }
 
@@ -485,6 +586,7 @@ class _BoardScreenState extends State<BoardScreen> {
     context.read<TaskBloc>().add(
       LoadTasks(boardId: id, query: searchController.text),
     );
+    _subscribeToTasks(id);
   }
 
   Future<void> _openWorkspaceMenu() async {
