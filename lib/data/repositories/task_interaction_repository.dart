@@ -5,13 +5,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../domain/entities/task_attachment.dart';
 import '../../domain/entities/task_comment.dart';
 import '../../domain/entities/task_rating.dart';
+import '../repositories/notification_repository.dart';
 
 class TaskInteractionRepository {
   static const String attachmentsBucket = 'task-attachments';
+  final NotificationRepository notificationRepository;
   final SupabaseClient _client;
 
-  TaskInteractionRepository({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  TaskInteractionRepository({
+    SupabaseClient? client,
+    required this.notificationRepository,
+  }) : _client = client ?? Supabase.instance.client;
 
   Future<List<TaskComment>> getComments(String taskId) async {
     final response = await _client
@@ -43,6 +47,34 @@ class TaskInteractionRepository {
         .select()
         .single();
 
+    // Notification logic
+    try {
+      final taskResponse = await _client
+          .from('tasks')
+          .select('creator_id, assignee_id, title')
+          .eq('id', taskId)
+          .single();
+
+      final creatorId = taskResponse['creator_id'] as String;
+      final assigneeId = taskResponse['assignee_id'] as String?;
+      final taskTitle = taskResponse['title'] as String;
+
+      final notifyUserIds = {creatorId, if (assigneeId != null) assigneeId};
+      notifyUserIds.remove(userId); // Don't notify the person who commented
+
+      for (final recipientId in notifyUserIds) {
+        await notificationRepository.createNotification(
+          userId: recipientId,
+          taskId: taskId,
+          commentId: response['id'] as String,
+          title: 'Bình luận mới',
+          message: 'Có bình luận mới trong thẻ: $taskTitle',
+        );
+      }
+    } catch (_) {
+      // ignore notification errors
+    }
+
     return TaskComment(
       id: response['id'] as String,
       taskId: response['task_id'] as String,
@@ -50,6 +82,10 @@ class TaskInteractionRepository {
       content: (response['content'] as String?) ?? '',
       createdAt: (response['created_at'] as String?) ?? '',
     );
+  }
+
+  Future<void> deleteComment(String commentId) async {
+    await _client.from('task_comments').delete().eq('id', commentId);
   }
 
   Future<List<TaskAttachment>> getAttachments(String taskId) async {

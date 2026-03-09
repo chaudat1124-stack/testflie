@@ -2,12 +2,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../domain/entities/friend_request.dart';
 import '../../domain/entities/friend_user.dart';
+import '../repositories/notification_repository.dart';
 
 class FriendRepository {
+  final NotificationRepository notificationRepository;
   final SupabaseClient _client;
 
-  FriendRepository({SupabaseClient? client})
-    : _client = client ?? Supabase.instance.client;
+  FriendRepository({
+    SupabaseClient? client,
+    required this.notificationRepository,
+  }) : _client = client ?? Supabase.instance.client;
 
   String _requireUserId() {
     final id = _client.auth.currentUser?.id;
@@ -72,7 +76,9 @@ class FriendRepository {
         .eq('status', 'pending')
         .maybeSingle();
     if (existingIncoming != null) {
-      throw Exception('Người này đã gửi lời mời cho bạn. Hãy chấp nhận lời mời.');
+      throw Exception(
+        'Người này đã gửi lời mời cho bạn. Hãy chấp nhận lời mời.',
+      );
     }
 
     await _client.from('friend_requests').insert({
@@ -80,6 +86,27 @@ class FriendRepository {
       'recipient_id': recipientId,
       'status': 'pending',
     });
+
+    // Notification logic
+    try {
+      final senderProfile = await _client
+          .from('profiles')
+          .select('display_name, email')
+          .eq('id', currentUserId)
+          .maybeSingle();
+
+      final senderName =
+          (senderProfile?['display_name'] as String?) ??
+          ((senderProfile?['email'] as String?)?.split('@').first ?? 'Ai đó');
+
+      await notificationRepository.createNotification(
+        userId: recipientId,
+        title: 'Lời mời kết bạn mới',
+        message: '$senderName đã gửi cho bạn một lời mời kết bạn.',
+      );
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<List<FriendUser>> getFriends() async {
@@ -100,14 +127,18 @@ class FriendRepository {
     try {
       final response = await _client
           .from('profiles')
-          .select('id, email, display_name, avatar_url, bio, is_online, last_seen_at')
+          .select(
+            'id, email, display_name, avatar_url, bio, is_online, last_seen_at',
+          )
           .filter('id', 'in', friendIds);
       profiles = response as List;
     } catch (e) {
       if (!_isMissingColumnError(e)) rethrow;
       final response = await _client
           .from('profiles')
-          .select('id, email, display_name, avatar_url, is_online, last_seen_at')
+          .select(
+            'id, email, display_name, avatar_url, is_online, last_seen_at',
+          )
           .filter('id', 'in', friendIds);
       profiles = response as List;
     }
@@ -179,6 +210,12 @@ class FriendRepository {
     required bool accept,
   }) async {
     _requireUserId();
+
+    // No manual friendship insertion here.
+    // The database trigger 'trg_friend_request_accept' handles it automatically
+    // when the status is updated to 'accepted'.
+
+    // 3. Cập nhật trạng thái lời mời
     await _client
         .from('friend_requests')
         .update({
@@ -187,6 +224,27 @@ class FriendRepository {
         })
         .eq('id', requestId)
         .eq('status', 'pending');
+  }
+
+  Future<void> removeFriend(String friendId) async {
+    final currentUserId = _requireUserId();
+
+    // Xóa quan hệ bạn bè cả 2 chiều
+    await _client
+        .from('friendships')
+        .delete()
+        .or(
+          'and(user_id.eq.$currentUserId,friend_id.eq.$friendId),and(user_id.eq.$friendId,friend_id.eq.$currentUserId)',
+        );
+
+    // Cập nhật trạng thái các lời mời kết bạn liên quan thành 'rejected' hoặc xóa đi để có thể kết bạn lại sau này
+    // Ở đây ta xóa để sạch database và cho phép gửi lại invitation mới
+    await _client
+        .from('friend_requests')
+        .delete()
+        .or(
+          'and(sender_id.eq.$currentUserId,recipient_id.eq.$friendId),and(sender_id.eq.$friendId,recipient_id.eq.$currentUserId)',
+        );
   }
 
   Future<void> updateMyPresence({required bool isOnline}) async {

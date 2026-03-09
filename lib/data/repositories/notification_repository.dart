@@ -63,4 +63,21 @@ class NotificationRepository {
         .eq('user_id', userId)
         .eq('is_read', false);
   }
+
+  Future<void> createNotification({
+    required String userId,
+    String? taskId,
+    String? commentId,
+    required String title,
+    required String message,
+  }) async {
+    await _client.from('user_notifications').insert({
+      'user_id': userId,
+      'task_id': taskId,
+      'comment_id': commentId,
+      'title': title,
+      'message': message,
+      'is_read': false,
+    });
+  }
 }

@@ -5,7 +5,6 @@ import '../../app_preferences.dart';
 
 import '../../domain/entities/board.dart';
 import '../blocs/auth/auth_bloc.dart';
-import '../blocs/auth/auth_event.dart';
 import '../blocs/auth/auth_state.dart';
 import '../blocs/board_bloc.dart';
 import '../blocs/board_event.dart';
@@ -102,23 +101,6 @@ class WorkspaceMenuScreen extends StatelessWidget {
                           ),
                           child: Row(
                             children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? Colors.blueAccent.withOpacity(0.18)
-                                      : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Icon(
-                                  Icons.dashboard_outlined,
-                                  color: selected
-                                      ? Colors.blueAccent
-                                      : const Color(0xFF64748B),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
                                   board.title,
@@ -147,24 +129,6 @@ class WorkspaceMenuScreen extends StatelessWidget {
                     },
                   );
                 },
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: OutlinedButton.icon(
-                onPressed: () {
-                  context.read<AuthBloc>().add(SignOutRequested());
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
-                label: Text(
-                  AppPreferences.tr('Đăng xuất', 'Logout'),
-                  style: const TextStyle(color: Colors.redAccent),
-                ),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size.fromHeight(46),
-                  side: BorderSide(color: Colors.redAccent.withOpacity(0.35)),
-                ),
               ),
             ),
           ],
