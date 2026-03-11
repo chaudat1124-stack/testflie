@@ -32,10 +32,14 @@ import 'data/repositories/friend_repository.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Supabase.initialize(
-    url: SupabaseConstants.supabaseUrl,
-    anonKey: SupabaseConstants.supabaseAnonKey,
-  );
+  try {
+    await Supabase.initialize(
+      url: SupabaseConstants.supabaseUrl,
+      anonKey: SupabaseConstants.supabaseAnonKey,
+    );
+  } catch (e) {
+    debugPrint('Supabase initialization error: $e');
+  }
 
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.windows ||

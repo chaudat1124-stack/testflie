@@ -31,7 +31,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>kanbanflow</string>
+				<string>taskmate</string>
 			</array>
 		</dict>
 	</array>
