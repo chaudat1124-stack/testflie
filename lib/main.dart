@@ -50,8 +50,17 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  await di.init();
-  await NotificationService.init();
+  try {
+    await di.init();
+  } catch (e) {
+    debugPrint('Dependency injection error: $e');
+  }
+
+  try {
+    await NotificationService.init();
+  } catch (e) {
+    debugPrint('Notification service error: $e');
+  }
 
   runApp(const MyApp());
 }

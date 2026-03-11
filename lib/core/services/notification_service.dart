@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -5,6 +6,8 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static Future<void> init() async {
+    if (kIsWeb) return; // Skip native notifications on Web to prevent hangs
+
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
