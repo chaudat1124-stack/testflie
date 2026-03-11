@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # nhom4-kanbanflow
 Ứng dụng quản lý công việc theo mô hình Kanban.
 
@@ -19,3 +20,6 @@
 ## Hướng dẫn cài đặt:
 1. Chạy `flutter pub get`
 2. Chạy `flutter run`
+=======
+# condimemay
+>>>>>>> bf068a19dffc770389ab8b2e00fdeb4214be327d
