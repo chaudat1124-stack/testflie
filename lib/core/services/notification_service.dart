@@ -6,53 +6,55 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   static Future<void> init() async {
-    if (kIsWeb) return; // Skip native notifications on Web to prevent hangs
+    if (kIsWeb) return; // Skip web
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
+    const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const DarwinInitializationSettings initializationSettingsDarwin =
+    const DarwinInitializationSettings iosSettings =
         DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
 
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-          android: initializationSettingsAndroid,
-          iOS: initializationSettingsDarwin,
-          macOS: initializationSettingsDarwin,
-        );
+    const InitializationSettings settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+      macOS: iosSettings,
+    );
 
     await _notificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // Handle notification tap if needed
+      settings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) async {
+        // xử lý khi người dùng click notification
       },
     );
 
-    // Yêu cầu quyền ngay khi khởi tạo
     await requestPermissions();
   }
 
   static Future<void> requestPermissions() async {
     // Android
-    final androidPlugin = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >();
+    final androidPlugin =
+        _notificationsPlugin.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
+
     if (androidPlugin != null) {
       await androidPlugin.requestNotificationsPermission();
     }
 
     // iOS
-    final iosPlugin = _notificationsPlugin
-        .resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin
-        >();
+    final iosPlugin =
+        _notificationsPlugin.resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin>();
+
     if (iosPlugin != null) {
-      await iosPlugin.requestPermissions(alert: true, badge: true, sound: true);
+      await iosPlugin.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
+      );
     }
   }
 
@@ -61,30 +63,33 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
-    const AndroidNotificationDetails androidPlatformChannelSpecifics =
+    const AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
-          'taskmate_notifications',
-          'TaskMate Notifications',
-          channelDescription: 'Notifications for TaskMate events',
-          importance: Importance.max,
-          priority: Priority.high,
-          showWhen: true,
-        );
+      'taskmate_notifications',
+      'TaskMate Notifications',
+      channelDescription: 'Notifications for TaskMate events',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
 
-    const DarwinNotificationDetails darwinPlatformChannelSpecifics =
-        DarwinNotificationDetails(presentAlert: true, presentBadge: true, presentSound: true);
+    const DarwinNotificationDetails iosDetails =
+        DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
 
-    const NotificationDetails platformChannelSpecifics = NotificationDetails(
-      android: androidPlatformChannelSpecifics,
-      iOS: darwinPlatformChannelSpecifics,
-      macOS: darwinPlatformChannelSpecifics,
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+      macOS: iosDetails,
     );
 
     await _notificationsPlugin.show(
-      id: id,
-      title: title,
-      body: body,
-      notificationDetails: platformChannelSpecifics,
+      id,
+      title,
+      body,
+      details,
     );
   }
 }
