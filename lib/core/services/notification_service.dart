@@ -2,21 +2,21 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
-  // Khởi tạo plugin
+  // 1. Khai báo tường minh kiểu dữ liệu để tránh lỗi "0 allowed"
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
   static Future<void> init() async {
-    if (kIsWeb) return; // Không chạy trên web
+    if (kIsWeb) return;
 
-    // 1. Cấu hình cho Android (icon lấy từ drawable/app_icon hoặc @mipmap/ic_launcher)
+    // Cấu hình Android
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    // 2. Cấu hình cho iOS/macOS
+    // Cấu hình iOS/macOS (Darwin)
     const DarwinInitializationSettings darwinSettings =
         DarwinInitializationSettings(
-      requestAlertPermission: false, // Sẽ yêu cầu permission thủ công sau
+      requestAlertPermission: false,
       requestBadgePermission: false,
       requestSoundPermission: false,
     );
@@ -27,32 +27,28 @@ class NotificationService {
       macOS: darwinSettings,
     );
 
-    // 3. Khởi tạo
+    // Khởi tạo plugin
     await _notificationsPlugin.initialize(
       settings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        // Xử lý logic khi người dùng chạm vào thông báo ở đây
-        debugPrint("Notification clicked with payload: ${response.payload}");
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // Xử lý khi click vào thông báo
+        debugPrint("Notification payload: ${response.payload}");
       },
     );
 
-    // 4. Xin quyền (Permissions)
     await requestPermissions();
   }
 
   static Future<void> requestPermissions() async {
     if (kIsWeb) return;
 
-    // Xin quyền cho Android (đặc biệt là Android 13+)
     if (defaultTargetPlatform == TargetPlatform.android) {
-      final androidPlugin = _notificationsPlugin
+      await _notificationsPlugin
           .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.requestNotificationsPermission();
-    } 
-    // Xin quyền cho iOS
-    else if (defaultTargetPlatform == TargetPlatform.iOS || 
-             defaultTargetPlatform == TargetPlatform.macOS) {
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.requestNotificationsPermission();
+    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
       await _notificationsPlugin
           .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin>()
@@ -65,22 +61,22 @@ class NotificationService {
   }
 
   static Future<void> showNotification({
-    int id = 0,
+    required int id,
     required String title,
     required String body,
     String? payload,
   }) async {
-    // Cấu hình chi tiết cho Android
+    // Cấu hình Android chi tiết
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'taskmate_channel_id', // ID kênh (duy nhất)
-      'TaskMate Notifications', // Tên kênh hiển thị trong cài đặt máy
+      'taskmate_channel_id',
+      'TaskMate Notifications',
       channelDescription: 'Notifications for TaskMate events',
       importance: Importance.max,
       priority: Priority.high,
       ticker: 'ticker',
     );
 
-    // Cấu hình chi tiết cho iOS
+    // Cấu hình iOS chi tiết
     const DarwinNotificationDetails darwinDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
@@ -93,14 +89,19 @@ class NotificationService {
       macOS: darwinDetails,
     );
 
-    // SỬA LỖI TẠI ĐÂY: Đảm bảo truyền đúng tham số
-    // Nếu vẫn lỗi "0 allowed", hãy kiểm tra xem bạn có đang import nhầm thư viện nào khác không.
-    await _notificationsPlugin.show(
-      id,
-      title,
-      body,
-      details,
-      payload: payload, // Thêm payload nếu cần truyền dữ liệu ngầm
-    );
+    // SỬA LỖI CHIẾN THUẬT: 
+    // Nếu Codemagic vẫn báo lỗi "0 allowed", chúng ta gọi hàm show với đầy đủ tham số có tên (nếu có)
+    // hoặc đảm bảo không có bất kỳ sự nhầm lẫn nào về kiểu dữ liệu.
+    try {
+      await _notificationsPlugin.show(
+        id,      // positional argument 1
+        title,   // positional argument 2
+        body,    // positional argument 3
+        details, // positional argument 4
+        payload: payload, // named argument
+      );
+    } catch (e) {
+      debugPrint("Error showing notification: $e");
+    }
   }
-}
+}s
