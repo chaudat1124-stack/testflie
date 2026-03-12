@@ -150,8 +150,9 @@ class TaskCard extends StatelessWidget {
                         builder: (context, state) {
                           if (state is BoardLoaded) {
                             final role = state.getRole(task.boardId);
-                            if (role == 'viewer')
+                            if (role == 'viewer') {
                               return const SizedBox.shrink();
+                            }
                           }
                           return InkWell(
                             onTap: () => context.read<TaskBloc>().add(

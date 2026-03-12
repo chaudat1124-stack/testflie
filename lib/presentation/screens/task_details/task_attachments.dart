@@ -119,7 +119,7 @@ class TaskAttachments extends StatelessWidget {
                           child: Image.network(
                             item.publicUrl,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (_, _, _) => Container(
                               color: const Color(0xFFF1F5F9),
                               child: const Icon(
                                 Icons.broken_image,

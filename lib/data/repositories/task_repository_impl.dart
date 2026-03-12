@@ -226,7 +226,7 @@ class TaskRepositoryImpl implements TaskRepository {
           .maybeSingle();
       
       if (response == null) return null;
-      return TaskModel.fromMap(response as Map<String, dynamic>);
+      return TaskModel.fromMap(response);
     } catch (_) {
       // Fallback to local if offline
       return localDatabase.getTaskById(id);

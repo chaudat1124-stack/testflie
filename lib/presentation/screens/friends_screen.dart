@@ -559,18 +559,21 @@ class _FriendsScreenState extends State<FriendsScreen> {
     if (lastSeen == null) return AppPreferences.tr('Ngoại tuyến', 'Offline');
 
     final diff = DateTime.now().difference(lastSeen);
-    if (diff.inMinutes < 1)
+    if (diff.inMinutes < 1) {
       return AppPreferences.tr('Vừa hoạt động', 'Just active');
-    if (diff.inMinutes < 60)
+    }
+    if (diff.inMinutes < 60) {
       return AppPreferences.tr(
         'Hoạt động ${diff.inMinutes} phút trước',
         'Active ${diff.inMinutes} minutes ago',
       );
-    if (diff.inHours < 24)
+    }
+    if (diff.inHours < 24) {
       return AppPreferences.tr(
         'Hoạt động ${diff.inHours} giờ trước',
         'Active ${diff.inHours} hours ago',
       );
+    }
     return AppPreferences.tr(
       'Hoạt động ${diff.inDays} ngày trước',
       'Active ${diff.inDays} days ago',

@@ -112,8 +112,9 @@ class _EmptyDashboardViewState extends State<EmptyDashboardView> {
       for (final item in friendshipsList) {
         final m = item as Map<String, dynamic>;
         if (m['user_id'] != userId) uniqueFriends.add(m['user_id'] as String);
-        if (m['friend_id'] != userId)
+        if (m['friend_id'] != userId) {
           uniqueFriends.add(m['friend_id'] as String);
+        }
       }
 
       if (!mounted) return;

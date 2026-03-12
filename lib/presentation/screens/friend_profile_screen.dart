@@ -33,14 +33,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   String _statusText() {
-    if (widget.friend.isOnline)
+    if (widget.friend.isOnline) {
       return AppPreferences.tr('Đang trực tuyến', 'Online');
+    }
     final lastSeen = widget.friend.lastSeenAt;
     if (lastSeen == null) return AppPreferences.tr('Ngoại tuyến', 'Offline');
 
     final diff = DateTime.now().difference(lastSeen);
-    if (diff.inMinutes < 1)
+    if (diff.inMinutes < 1) {
       return AppPreferences.tr('Vừa hoạt động', 'Just active');
+    }
     if (diff.inMinutes < 60) {
       return AppPreferences.tr(
         'Hoạt động ${diff.inMinutes} phút trước',
@@ -61,8 +63,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
   String _lastSeenDetail() {
     final lastSeen = widget.friend.lastSeenAt;
-    if (lastSeen == null)
+    if (lastSeen == null) {
       return AppPreferences.tr('Chưa có dữ liệu', 'No data');
+    }
 
     final local = lastSeen.toLocal();
     final day = local.day.toString().padLeft(2, '0');
@@ -122,8 +125,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
         // Combine unique tasks
         final allTasks = <String, Map<String, dynamic>>{};
-        for (final t in assigned) allTasks[t['id'] as String] = t;
-        for (final t in created) allTasks[t['id'] as String] = t;
+        for (final t in assigned) {
+          allTasks[t['id'] as String] = t;
+        }
+        for (final t in created) {
+          allTasks[t['id'] as String] = t;
+        }
 
         final tasksList = allTasks.values.toList();
         assignedTasks = tasksList.length;

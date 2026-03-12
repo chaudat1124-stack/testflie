@@ -353,8 +353,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 child,
                                                 loadingProgress,
                                               ) {
-                                                if (loadingProgress == null)
+                                                if (loadingProgress == null) {
                                                   return child;
+                                                }
                                                 return Container(
                                                   width: 240,
                                                   height: 180,

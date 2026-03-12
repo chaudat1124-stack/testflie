@@ -102,7 +102,7 @@ class TaskDetailsUtils {
             ],
           ],
         ),
-        if (trailing != null) trailing,
+        ?trailing,
       ],
     );
   }

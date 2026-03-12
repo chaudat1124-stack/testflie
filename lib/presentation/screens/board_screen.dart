@@ -1535,14 +1535,14 @@ class _BoardScreenState extends State<BoardScreen> {
     String? currentAttachmentName = initialAttachmentName;
     String currentTaskType = taskType;
     if (initialChecklist != null) currentTaskType = 'checklist';
-    bool _isUploading = false;
+    bool isUploading = false;
 
     // Determine form type and colors
     String dialogTitle = AppPreferences.tr('Thêm công việc', 'Add Task');
     IconData headerIcon = Icons.auto_awesome_rounded;
     Color themeColor = Colors.blueAccent;
 
-    void _updateDialogTheme(Uint8List? bytes, String? name) {
+    void updateDialogTheme(Uint8List? bytes, String? name) {
       if (bytes != null) {
         if (name?.endsWith('.png') == true &&
             name?.contains('drawing_') == true) {
@@ -1576,7 +1576,7 @@ class _BoardScreenState extends State<BoardScreen> {
       }
     }
 
-    _updateDialogTheme(currentAttachmentBytes, currentAttachmentName);
+    updateDialogTheme(currentAttachmentBytes, currentAttachmentName);
 
     showDialog(
       context: context,
@@ -1753,7 +1753,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                                 setDialogState(() {
                                                   currentAttachmentBytes = null;
                                                   currentAttachmentName = null;
-                                                  _updateDialogTheme(
+                                                  updateDialogTheme(
                                                     null,
                                                     null,
                                                   );
@@ -1865,7 +1865,7 @@ class _BoardScreenState extends State<BoardScreen> {
                               'Task Title',
                             ),
                             icon: Icons.edit_note_rounded,
-                            enabled: !_isUploading,
+                            enabled: !isUploading,
                             autofocus: true,
                           ),
                           const SizedBox(height: 16),
@@ -1907,7 +1907,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                   setDialogState(() {
                                     currentAttachmentBytes = file.bytes;
                                     currentAttachmentName = file.name;
-                                    _updateDialogTheme(
+                                    updateDialogTheme(
                                       currentAttachmentBytes,
                                       currentAttachmentName,
                                     );
@@ -1949,7 +1949,7 @@ class _BoardScreenState extends State<BoardScreen> {
 
                           // Modern Date Picker
                           InkWell(
-                            onTap: _isUploading
+                            onTap: isUploading
                                 ? null
                                 : () async {
                                     final now = DateTime.now();
@@ -2035,7 +2035,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                       ),
                                     ),
                                   ),
-                                  if (selectedDueAt != null && !_isUploading)
+                                  if (selectedDueAt != null && !isUploading)
                                     IconButton(
                                       onPressed: () => setDialogState(
                                         () => selectedDueAt = null,
@@ -2054,7 +2054,7 @@ class _BoardScreenState extends State<BoardScreen> {
 
                           // Multi-Assignee Selection in Add Task Dialog
                           InkWell(
-                            onTap: _isUploading
+                            onTap: isUploading
                                 ? null
                                 : () async {
                                     final result =
@@ -2173,7 +2173,7 @@ class _BoardScreenState extends State<BoardScreen> {
                             children: [
                               Expanded(
                                 child: TextButton(
-                                  onPressed: _isUploading
+                                  onPressed: isUploading
                                       ? null
                                       : () => Navigator.pop(context),
                                   style: TextButton.styleFrom(
@@ -2198,7 +2198,7 @@ class _BoardScreenState extends State<BoardScreen> {
                               Expanded(
                                 flex: 2,
                                 child: ElevatedButton(
-                                  onPressed: _isUploading
+                                  onPressed: isUploading
                                       ? null
                                       : () async {
                                           if (titleController.text
@@ -2217,7 +2217,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                           );
 
                                           setDialogState(
-                                            () => _isUploading = true,
+                                            () => isUploading = true,
                                           );
 
                                           final authState = authBloc.state;
@@ -2242,7 +2242,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                               ),
                                             );
                                             setDialogState(
-                                              () => _isUploading = false,
+                                              () => isUploading = false,
                                             );
                                             return;
                                           }
@@ -2318,7 +2318,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                                 ),
                                               );
                                               setDialogState(
-                                                () => _isUploading = false,
+                                                () => isUploading = false,
                                               );
                                             }
                                           }
@@ -2335,7 +2335,7 @@ class _BoardScreenState extends State<BoardScreen> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                   ),
-                                  child: _isUploading
+                                  child: isUploading
                                       ? const SizedBox(
                                           width: 22,
                                           height: 22,

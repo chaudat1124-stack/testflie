@@ -99,7 +99,7 @@ class BoardRepositoryImpl implements BoardRepository {
         .subscribe();
 
     // Lắng nghe thay đổi trên bảng board_members (dành cho thành viên được mời)
-    final __ = supabaseClient
+    final _ = supabaseClient
         .channel('public:board_members:user_id=eq.$userId')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
@@ -285,6 +285,7 @@ class BoardRepositoryImpl implements BoardRepository {
     _roleCache.remove(boardId);
   }
 
+  @override
   String? getRole(String boardId) => _roleCache[boardId];
 
   void _updateRoleCache(String boardId, String? role) {

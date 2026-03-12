@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
@@ -472,7 +472,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             title: _t('Ngôn ngữ', 'Language'),
                             icon: Icons.language_rounded,
                             child: DropdownButtonFormField<String>(
-                              value: _languageCode,
+                              initialValue: _languageCode,
                               items: [
                                 DropdownMenuItem(
                                   value: 'vi',
