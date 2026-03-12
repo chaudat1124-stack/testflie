@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
-  // 1. Khai báo tường minh kiểu dữ liệu để tránh lỗi "0 allowed"
+  // 1. Khai báo tường minh kiểu dữ liệu để tránh lỗi nhận diện hàm
   static final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -89,19 +89,16 @@ class NotificationService {
       macOS: darwinDetails,
     );
 
-    // SỬA LỖI CHIẾN THUẬT: 
-    // Nếu Codemagic vẫn báo lỗi "0 allowed", chúng ta gọi hàm show với đầy đủ tham số có tên (nếu có)
-    // hoặc đảm bảo không có bất kỳ sự nhầm lẫn nào về kiểu dữ liệu.
     try {
       await _notificationsPlugin.show(
-        id,      // positional argument 1
-        title,   // positional argument 2
-        body,    // positional argument 3
-        details, // positional argument 4
-        payload: payload, // named argument
+        id,
+        title,
+        body,
+        details,
+        payload: payload,
       );
     } catch (e) {
       debugPrint("Error showing notification: $e");
     }
   }
-}s
+}
